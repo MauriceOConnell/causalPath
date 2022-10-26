@@ -564,7 +564,7 @@ average_pspaf <- function(data, model_list, parent_list, node_vec, prev=.09, exa
   res <- boot::boot(data=data,statistic=average_pspaf_inner,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, vars=vars, exact=exact, response_model = response_model, mediator_models = mediator_models, riskfactor = riskfactor, refval=refval, calculation_method = calculation_method)
   if(is.null(vars)) vars <- node_vec[1:(length(node_vec)-1)]
 
-      return(extract_ci(res=res,model_type='glm',t_vector=c(paste0(rep(node_vec[node_vec %in% vars],times=rep(length(vars),length(vars))),'_',rep(1:length(vars),length(vars))),paste0("Average PAF ", node_vec[node_vec %in% vars]),'JointPAF'),ci_level=ci_level,ci_type=ci_type,continuous=TRUE))
+      return(extract_ci(res=res,model_type='glm',t_vector=c(paste0(rep(node_vec[node_vec %in% vars],times=rep(length(vars),length(vars))),'_',rep(1:length(vars),length(vars))),paste0("Average PAF ", node_vec[node_vec %in% vars]),'TotalPAF'),ci_level=ci_level,ci_type=ci_type,continuous=TRUE))
 
 }
 

@@ -1,9 +1,11 @@
-Package: graphPAF
-Title: Fan plots, Nomograms and other comparisons of disease burden
+Package: causalPATH
+Title: Pathway-specific Populatoin attributable fractions (PSPAF), Sequential PSPAF, Joint PSPAF and Average PSPAF
 Version: 0.0.0.9000
-Authors@R: 
-    person("John", "Ferguson", , "john.ferguson@nuigalway.ie", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+Authors@R: c(
+    person("Maurice", "O'Connell", , "maurice.oconnell2@gmail.com", role = c("aut", "cph", "cre"),
+           comment = c(ORCID = "0000-0001-9658-495X")),
+    person("John", "Ferguson", role = c("aut", "cph","cre"))
+  )
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
 Encoding: UTF-8
