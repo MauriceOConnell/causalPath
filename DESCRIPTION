@@ -4,16 +4,16 @@ Version: 0.0.0.9000
 Authors@R: c(
     person("Maurice", "O'Connell", , "maurice.oconnell2@gmail.com", role = c("aut", "cph", "cre"),
            comment = c(ORCID = "0000-0001-9658-495X")),
-    person("John", "Ferguson", role = c("aut", "cph","cre"))
+    person("John", "Ferguson", role = c("aut", "cph"))
   )
-Description: What the package does (one paragraph).
+Description: Estimates Pathway-specific Populatoin attributable fractions (PSPAF), Sequential PSPAF, Joint PSPAF and Average PSPAF and Total Population Attributable Fractions (PAF).
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
-URL: https://github.com/johnfergusonNUIG/graphPAF
-BugReports: https://github.com/johnfergusonNUIG/graphPAF/issues
+URL: https://github.com/MauriceOConnell/causalPath
+BugReports: https://github.com/MauriceOConnell/causalPath/issues
 Imports: 
     boot,
     ggplot2,
