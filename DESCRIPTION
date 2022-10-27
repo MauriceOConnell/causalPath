@@ -1,4 +1,4 @@
-Package: causalPATH
+Package: causalPath
 Title: Pathway-specific Populatoin attributable fractions (PSPAF), Sequential PSPAF, Joint PSPAF and Average PSPAF
 Version: 0.0.0.9000
 Authors@R: c(
