@@ -1,4 +1,4 @@
-#' Calculation of average and sequential pathway-specific population attributable fractions (PSPAF) and total PAF (with bootstrapped confidence intervals).
+#' Calculation of average and sequential pathway-specific population attributable fractions (PSPAF) and pathway-specific impact fractions and total PAF (with bootstrapped confidence intervals).Population impact fractions purport to measure the proportional reduction in disease risk from a realistic health intervention that may reduce the prevalence of a risk factor (rather than eliminate the risk factor), or perhaps favorably change the collective statistical distribution of many risk factors.
 #'
 #' @param data Data frame. A dataframe containing variables used for fitting the models.  Must contain all variables used in fitting
 #' @param model_list List.  A list of models corresponding for the outcome variables in node_vec, with parents as described in parent_vec.  This list must be in the same order as node_vec and parent_list
@@ -15,6 +15,10 @@
 #' @param riskfactor character.  Represents the name of the risk factor
 #' @param refval For factor valued risk factors, the reference level of the risk factor.  If the risk factor is numeric, the reference level is assumed to be 0.
 #' @param calculation_method A character either 'B' (Bruzzi 1985) or 'D' (Direct method). Bruzzi's method estimates PAF from relative risks and prevalence of exposure to the risk factor.  The Direct method estimates PAF by summing estimated probabilities of disease in the absense of exposure on the individual level
+#' @param PS_impactFraction Logical indicator, TRUE or FALSE. TRUE means that an pathway-specific impact fraction is to be calculated. FALSE implies a pathway-specific population attributavble fraction is to be calculated.
+#' @param percent A numerical percentage in decimal form e.g. percent = 0.33. The percent indicates the percentage of the total exposed individuals whose treatment or exposure variable is set to the reference value (i.e. refval). This is the percentage for the pathway-specific impact fraction.
+#' @param method A character with two options i.e. "observed" or "predict". "predict" applies the double expectation theorem in the derivation of the identification of the estimand i.e. it sums over all covariates and mediators. Whereas, "observed" uses the observed outcome and mediators for those individuals not forming part of the "percent" group rather than applying the double expectation theorem.
+#' @param response_name A character e.g. "case", which give the name of the response variable in the data.
 #' @return A dataframe with average joint and sequential PAF for all risk factors in node_vec and total PAF (or alternatively a subset of those risk factors if specified in vars).
 #' @export
 #'
@@ -50,7 +54,7 @@
 #' # average_pspaf_no_CI(data=stroke_reduced, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = NULL, alpha=0.05,
 #'                   # vars = c("exercise","high_blood_pressure","lipids","waist_hip_ratio"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
 #'                   # riskfactor = "exercise", refval=0, calculation_method = "D")
-average_pspaf_no_CI <- function(data, model_list, parent_list, node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = NULL, alpha=0.05, vars = NULL, exact = TRUE, response_model, mediator_models, riskfactor, refval, calculation_method = "D"){
+average_pspaf_no_CI_impactfraction <- function(data, model_list, parent_list, node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = NULL, alpha=0.05, vars = NULL, exact = TRUE, response_model, mediator_models, riskfactor, refval, calculation_method = "D", PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
 
   response_col <- (1:length(colnames(data)))[colnames(data) %in% node_vec[length(node_vec)]]
   if(!c("weights") %in% colnames(data)) data$weights = rep(1, nrow(data))
@@ -167,6 +171,24 @@ pathspecific_col_list <- numeric(length(pathOrder))
   pathspecific_col_list_orig <- pathspecific_col_list
 
   riskfactor_col <- (1:length(colnames(data)))[colnames(data) %in% riskfactor]
+
+################################
+  if(PS_impactFraction){
+
+                if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                      stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                }
+                new_PSIF_data <- data
+                Num_rows <- nrow(data)
+                which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                Num_exposed <- length(exposed_patients)
+                newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+
+                remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+          }
 ######################################################################################
   ######
   ## End of material to MOVE above for loop
@@ -225,7 +247,26 @@ if(!exact){
 
                     if( the_order[j]  == riskfactor_col ){
 
-                          current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          ###############
+                          if(PS_impactFraction){
+                                riskfactor_vals_check <- data[,riskfactor_col]
+                                 if(is.numeric(riskfactor_vals_check)){
+                                      if(is.na(refval)) refval <- 0
+                                      if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                        stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                      }
+                                    }
+                                # new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                                if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                                if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                                if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
+
+                                current_mat <- new_PSIF_data
+
+                          }else{
+                                current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          }
+                          ###############
 
                     }else{
                             index <- which( mediatorNames[1,] == pathOrder[ 1, the_order_colNums1toN[j] ])
@@ -234,10 +275,19 @@ if(!exact){
 
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ the_order_colNums1toN[j] ],
-                                                                            current_mat = current_mat_riskfactor_refval,
-                                                                            model = mediator_models[[index]],
-                                                                            SN=TRUE)
+                                # current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ the_order_colNums1toN[j] ],
+                                #                                             current_mat = current_mat_riskfactor_refval,
+                                #                                             model = mediator_models[[index]],
+                                #                                             SN=TRUE)
+                                ###########################
+                                current_mat[,mediator_col[index]] <- do_sim_impact_fraction(colnum = pathspecific_col_list_orig[ the_order_colNums1toN[j] ],
+                                                                                                      current_mat = current_mat_riskfactor_refval,
+                                                                                                      model = mediator_models[[index]],
+                                                                                                      SN=TRUE,
+                                                                                                      PS_impactFraction = PS_impactFraction,
+                                                                                                      remain_exposed_patients = remain_exposed_patients,
+                                                                                                      naturally_unexposed_patients = naturally_unexposed_patients)
+                                ###########################
                           }
 
                           if(mediator_model_type[index]=='lm'){
@@ -245,8 +295,14 @@ if(!exact){
                                 new_data_direct <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
                                 mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
+                                ####################
+                                if(PS_impactFraction){
+                                      current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
 
-                                current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                }else{
+                                      current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                }
+                                ####################
                           }
 
                     }
@@ -317,10 +373,30 @@ if(!exact){
 
             if(start_again==FALSE){
                   if( col_list[1:N][perm_mat[i,number_rf_new]] == riskfactor_col){
-                         # assumes riskfactor is binary?
-                         current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                         joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
+                         ############################
+                         if(PS_impactFraction){
+                              riskfactor_vals_check <- data[,riskfactor_col]
+                              if(is.numeric(riskfactor_vals_check)){
+                                    if(is.na(refval)) refval <- 0
+                                    if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                          stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                    }
+                                }
+
+                             if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                             if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                             if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
+
+                             current_mat <- new_PSIF_data
+
+                       }else{
+                             # assumes riskfactor is binary?
+                             current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                       }
+
+                       joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
+                        #############################
 
                   }else{
                             index <- which( mediatorNames[1,] == pathOrder[ 1, perm_mat[i,number_rf_new] ])
@@ -330,30 +406,39 @@ if(!exact){
                                 # Set the risk factor to refval i.e. 0
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                # # ## Add in to keep class of column after it is simulated
-                                # keepColumnClass <- class(current_mat[,mediator_col[index]])
+                                # # # ## Add in to keep class of column after it is simulated
+                                # # keepColumnClass <- class(current_mat[,mediator_col[index]])
+                                # #
+                                # # temp_current_mat <- current_mat
                                 #
-                                # temp_current_mat <- current_mat
-
-                                # ## if is.factor(current_mat[,mediator_col[index]]) then do_sim outputs it as a character vector and impact_fraction outputs an error because the two classes for data and new_data differ as factor and character so need to keep class as character
-                                # ## whereas it works if the class is numeric
-                                # if( is.factor(current_mat[,mediator_col[index]]) ){
-                                #
-                                #   current_mat[,mediator_col[index]] <- factor(
-                                #                                              do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
-                                #                                              current_mat = current_mat_riskfactor_refval,
-                                #                                              model = mediator_models[[index]],
-                                #                                              SN=TRUE),
-                                #                                              levels=levels(current_mat[,mediator_col[index]] )
-                                #                                             )
-                                #
-                                # }else{
-                                # # SET SN=TRUE as dont want SN=FALSE option
-                                      current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
-                                                                            current_mat = current_mat_riskfactor_refval,
-                                                                            model = mediator_models[[index]],
-                                                                            SN=TRUE)
-                                # }
+                                # # ## if is.factor(current_mat[,mediator_col[index]]) then do_sim outputs it as a character vector and impact_fraction outputs an error because the two classes for data and new_data differ as factor and character so need to keep class as character
+                                # # ## whereas it works if the class is numeric
+                                # # if( is.factor(current_mat[,mediator_col[index]]) ){
+                                # #
+                                # #   current_mat[,mediator_col[index]] <- factor(
+                                # #                                              do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
+                                # #                                              current_mat = current_mat_riskfactor_refval,
+                                # #                                              model = mediator_models[[index]],
+                                # #                                              SN=TRUE),
+                                # #                                              levels=levels(current_mat[,mediator_col[index]] )
+                                # #                                             )
+                                # #
+                                # # }else{
+                                # # # SET SN=TRUE as dont want SN=FALSE option
+                                #       current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
+                                #                                             current_mat = current_mat_riskfactor_refval,
+                                #                                             model = mediator_models[[index]],
+                                #                                             SN=TRUE)
+                                # # }
+                                #############################
+                                      current_mat[,mediator_col[index]] <- do_sim_impact_fraction(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
+                                                                                                  current_mat = current_mat_riskfactor_refval,
+                                                                                                  model = mediator_models[[index]],
+                                                                                                  SN=TRUE,
+                                                                                                  PS_impactFraction = PS_impactFraction,
+                                                                                                  remain_exposed_patients = remain_exposed_patients,
+                                                                                                  naturally_unexposed_patients = naturally_unexposed_patients)
+                                #############################
 
                                 # if( class(current_mat[,mediator_col[index]]) != keepColumnClass ){
                                 #
@@ -380,7 +465,13 @@ if(!exact){
 
                               mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
 
-                              current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                              #######
+                              if(PS_impactFraction){
+                                    current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
+                              }else{
+                                    current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                              }
+                              #######
 
                               joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
                           }
@@ -396,10 +487,26 @@ if(!exact){
 
                     if(col_list[1:N][perm_mat[i,j]] == riskfactor_col ){
 
-                          current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          ###########
+                          if(PS_impactFraction){
+                                riskfactor_vals_check <- data[,riskfactor_col]
+                                if(is.numeric(riskfactor_vals_check)){
+                                      if(is.na(refval)) refval <- 0
+                                            if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                            stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                        }
+                                      }
+                                if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                                if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                                if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
 
+                                current_mat <- new_PSIF_data
 
+                          }else{
 
+                                current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          }
+                          ###########
                     }else{
 
                           index <- which( mediatorNames[1,] == pathOrder[ 1, perm_mat[i,j] ])
@@ -408,25 +515,34 @@ if(!exact){
 
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                ## if is.factor(current_mat[,mediator_col[index]]) then do_sim outputs it as a character vector and impact_fraction outputs an error because the two classes for data and new_data differ as factor and character so need to keep class as character
-                                ## whereas it works if the class is numeric
-                                # if( is.factor(current_mat[,mediator_col[index]]) ){
+                                # ## if is.factor(current_mat[,mediator_col[index]]) then do_sim outputs it as a character vector and impact_fraction outputs an error because the two classes for data and new_data differ as factor and character so need to keep class as character
+                                # ## whereas it works if the class is numeric
+                                # # if( is.factor(current_mat[,mediator_col[index]]) ){
+                                # #
+                                # #       current_mat[,mediator_col[index]] <- factor(
+                                # #                                             do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
+                                # #                                             current_mat = current_mat_riskfactor_refval,
+                                # #                                             model = mediator_models[[index]],
+                                # #                                             SN=TRUE),
+                                # #                                             levels=levels(current_mat[,mediator_col[index]] )
+                                # #                                             )
+                                # # }else{
                                 #
-                                #       current_mat[,mediator_col[index]] <- factor(
-                                #                                             do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
+                                #       # MOC fix error here pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ] should be pathspecific_col_list_orig[ perm_mat[i,j] ]
+                                #       current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
                                 #                                             current_mat = current_mat_riskfactor_refval,
                                 #                                             model = mediator_models[[index]],
-                                #                                             SN=TRUE),
-                                #                                             levels=levels(current_mat[,mediator_col[index]] )
-                                #                                             )
-                                # }else{
-
-                                      # MOC fix error here pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ] should be pathspecific_col_list_orig[ perm_mat[i,j] ]
-                                      current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
-                                                                            current_mat = current_mat_riskfactor_refval,
-                                                                            model = mediator_models[[index]],
-                                                                            SN=TRUE)
-                                # }
+                                #                                             SN=TRUE)
+                                # # }
+                                      ########################
+                                      current_mat[,mediator_col[index]] <- do_sim_impact_fraction(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
+                                                                                            current_mat = current_mat_riskfactor_refval,
+                                                                                            model = mediator_models[[index]],
+                                                                                            SN=TRUE,
+                                                                                            PS_impactFraction = PS_impactFraction,
+                                                                                            remain_exposed_patients = remain_exposed_patients,
+                                                                                            naturally_unexposed_patients = naturally_unexposed_patients)
+                                      ########################
 
                           }
 
@@ -435,8 +551,13 @@ if(!exact){
                                 new_data_direct <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
                                 mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
-
-                                current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                ####################
+                                if(PS_impactFraction){
+                                      current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
+                                }else{
+                                      current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                }
+                                ####################
 
                           }
 
@@ -601,8 +722,8 @@ if(!exact){
 #'                  riskfactor = "exercise", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95)
 #'
 #' # joint_pspaf(data=stroke_reduced, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, vars = c("exercise","high_blood_pressure","lipids","waist_hip_ratio"),response_model = response_model, mediator_models = mediator_models, riskfactor = "exercise", refval=0, calculation_method = "D", ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95)
-average_pspaf <- function(data, model_list, parent_list, node_vec, prev=.09, exact=TRUE, nsim=NULL, correct_order=2, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95){
-    if(!node_order(parent_list=parent_list,node_vec=node_vec)){
+average_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec, prev=.09, exact=TRUE, nsim=NULL, correct_order=2, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
+    if(!node_order(parent_list=parent_list,node_vec=node_vec )){
     stop("ancestors must be specified before descendants in node_vec")
   }
   if(!is.null(vars) & !all(vars %in% node_vec)){
@@ -616,10 +737,10 @@ average_pspaf <- function(data, model_list, parent_list, node_vec, prev=.09, exa
 
   }
 
-  if(!ci) return(average_pspaf_no_CI(data=data, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, alpha=1-ci_level_ME,vars=vars,exact=exact, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method = calculation_method))
+  if(!ci) return(average_pspaf_no_CI_impactfraction(data=data, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, alpha=1-ci_level_ME,vars=vars,exact=exact, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method = calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name))
   ## MOC: NEED TO UPDATE Parameters
   # CHECK IF NEED MORE PARAMETERS
-  res <- boot::boot(data=data,statistic=average_pspaf_inner,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, vars=vars, exact=exact, response_model = response_model, mediator_models = mediator_models, riskfactor = riskfactor, refval=refval, calculation_method = calculation_method)
+  res <- boot::boot(data=data,statistic=average_pspaf_inner_impactfraction,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, vars=vars, exact=exact, response_model = response_model, mediator_models = mediator_models, riskfactor = riskfactor, refval=refval, calculation_method = calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name)
   if(is.null(vars)) vars <- node_vec[1:(length(node_vec)-1)]
 
       return(extract_ci(res=res,model_type='glm',t_vector=c(paste0(rep(node_vec[node_vec %in% vars],times=rep(length(vars),length(vars))),'_',rep(1:length(vars),length(vars))),paste0("Average PAF ", node_vec[node_vec %in% vars]),'TotalPAF'),ci_level=ci_level,ci_type=ci_type,continuous=TRUE))
@@ -627,8 +748,8 @@ average_pspaf <- function(data, model_list, parent_list, node_vec, prev=.09, exa
 }
 
 # CHECK PARAMETERS ADDED IN
-average_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, prev=.09, nsim=100, correct_order=3, vars=NULL, exact=TRUE, response_model = response_model, mediator_models = mediator_models,
-                  riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95){
+average_pspaf_inner_impactfraction <- function(data, ind, model_list, parent_list, node_vec, prev=.09, nsim=100, correct_order=3, vars=NULL, exact=TRUE, response_model = response_model, mediator_models = mediator_models,
+                  riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
 
 
   library(splines)
@@ -687,55 +808,163 @@ average_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, pr
   }
 
 
-  sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_list){
+  # sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_list){
+  #
+  #   if(is.factor(current_mat[,col_num])) current_mat[,col_num] <- levels(data[,col_num])[1]
+  #   if(is.numeric(current_mat[,col_num])) current_mat[,col_num] <- 0
+  #
+  #   colname <- colnames(current_mat)[col_num]
+  #
+  #   for(i in 1:(length(parent_list)-1)){
+  #     if(colname %in% parent_list[[i]]){
+  #       if(length(table(current_mat[,col_list[[i]]] ))==1) next
+  #
+  #       if(is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- factor(do_sim(col_list[i],current_mat,model_list[[i]]),levels=levels(current_mat[,col_list[i]]))
+  #       if(!is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- do_sim(col_list[i],current_mat,model_list[[i]],SN=TRUE)
+  #     }
+  #   }
+  #   current_mat
+  # }
 
-    if(is.factor(current_mat[,col_num])) current_mat[,col_num] <- levels(data[,col_num])[1]
-    if(is.numeric(current_mat[,col_num])) current_mat[,col_num] <- 0
-
-    colname <- colnames(current_mat)[col_num]
-
-    for(i in 1:(length(parent_list)-1)){
-      if(colname %in% parent_list[[i]]){
-        if(length(table(current_mat[,col_list[[i]]] ))==1) next
-
-        if(is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- factor(do_sim(col_list[i],current_mat,model_list[[i]]),levels=levels(current_mat[,col_list[i]]))
-        if(!is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- do_sim(col_list[i],current_mat,model_list[[i]],SN=TRUE)
-      }
-    }
-    current_mat
-  }
 
 
-
-  # do_sim <- function(colnum,current_mat, model,SN=FALSE){
-  do_sim <- function(colnum,current_mat, model,SN=TRUE){
+  # # do_sim <- function(colnum,current_mat, model,SN=FALSE){
+  # do_sim <- function(colnum,current_mat, model,SN=TRUE){
+  #   ## polr
+  #   # if(names(model)[2]=='zeta'){
+  #   if(class(model)[1]=="polr"){
+  #
+  #     probs <- predict(model,newdata=current_mat,type="probs")
+  #     mynames <- colnames(probs)
+  #     # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+  #           if( is.factor(current_mat[,colnum ]) ){
+  #                  return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
+  #                                  levels=levels(current_mat[,colnum ] ) ) )
+  #           }else{
+  #                  return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+  #                }
+  #   }
+  #   # glm
+  #   # if(length(grep("glm",model$call))>0){
+  #   if(class(model)[1]=="glm"){
+  #
+  #     probs <- predict(model,newdata=current_mat,type="response")
+  #     if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
+  #     # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
+  #           if( is.factor(current_mat[,colnum ]) ){
+  #                    return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
+  #                                    levels=levels(current_mat[,colnum ] ) ) )
+  #             }else{
+  #                    return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
+  #                  }
+  #   }
+  #   # regression
+  #   # if(length(grep("lm",model$call))>0){
+  #   if(class(model)[1]=="lm"){
+  #
+  #     pred <- predict(model,newdata=current_mat,type="response")
+  #     resids <- model$residuals
+  #     if(SN){
+  #
+  #       return(pred+resids)
+  #
+  #     }
+  #
+  #     #browser()
+  #     #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
+  #     #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
+  #     return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+  #   }
+  # }
+  #########################################################
+### Need to Add in
+#########################################################
+##################################
+##################################
+ ### SET SN = TRUE AS DEFAULT AS WANT SN=TRUE FOR CONTINOUS MEDIATOR NOTE THE DEFAULT WAS PREVIOUSLY SN=FALSE BUT WE WANT SN=TRUE FOR CONTINUOUS MEDIATOR
+ do_sim_impact_fraction <- function(colnum,current_mat, model,SN=TRUE, PS_impactFraction = FALSE, remain_exposed_patients = NULL, naturally_unexposed_patients = NULL){
     ## polr
     # if(names(model)[2]=='zeta'){
     if(class(model)[1]=="polr"){
 
       probs <- predict(model,newdata=current_mat,type="probs")
       mynames <- colnames(probs)
+      ######
+      if(PS_impactFraction){
+
+            if(is.null(remain_exposed_patients) || is.null(naturally_unexposed_patients) ){
+                  stop("Must provide argument for naturally_unexposed_patients and remain_exposed_patients.")
+            }
+
+            ###
+            # Define levels as used in for loop
+            levels <- sort(unique(current_mat[,colnum]))
+            if(is.factor(current_mat[,colnum])) levels <- levels(current_mat[,colnum])
+            ###
+            for(j in 1:length(levels)){
+                   # NEED TO UPDATE SO HAS FACTOR, or NUMERICAL
+                   j_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% levels[j] )
+                   j_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% levels[j])
+
+                   probs[naturally_unexposed_patients,j] <- j_in_naturally_unexposed_patients*1
+                   probs[remain_exposed_patients,j] <- j_in_remain_exposed_patients*1
+            }
+
+      }
+      ######
       # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
-            if( is.factor(current_mat[,colnum ]) ){
-                   return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
+      if( is.factor(current_mat[,colnum ]) ){
+                return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
                                    levels=levels(current_mat[,colnum ] ) ) )
-            }else{
-                   return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
-                 }
+        }else{
+                return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+             }
+
     }
     # glm
     # if(length(grep("glm",model$call))>0){
     if(class(model)[1]=="glm"){
 
       probs <- predict(model,newdata=current_mat,type="response")
+      #####
+      #########
+      if(PS_impactFraction){
+
+             if(is.null(remain_exposed_patients) || is.null(naturally_unexposed_patients) ){
+                  stop("Must provide argument for remain_exposed_patients and naturally_unexposed_patients.")
+             }
+
+             # TRY COMMENTING OUT THIS SINCE probs is only defined for P(Y=1) above
+             # # Assumes refval is 0 and other value is 1
+             # zero_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 0 )
+             # zero_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 0)
+             #
+             # probs[naturally_unexposed_patients,1] <- zero_in_naturally_unexposed_patients*1
+             # probs[remain_exposed_patients,1] <- zero_in_remain_exposed_patients*1
+
+
+             # one_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 1 )
+             # one_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 1)
+             #
+             # probs[naturally_unexposed_patients,2] <- one_in_naturally_unexposed_patients*1
+             # probs[remain_exposed_patients,2] <- one_in_remain_exposed_patients*1
+
+             one_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 1 )
+             one_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 1)
+
+             probs[naturally_unexposed_patients] <- one_in_naturally_unexposed_patients*1
+             probs[remain_exposed_patients] <- one_in_remain_exposed_patients*1
+      }
+      #########
+      #####
       if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
       # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
-            if( is.factor(current_mat[,colnum ]) ){
-                     return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
+      if( is.factor(current_mat[,colnum ]) ){
+                 return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
                                      levels=levels(current_mat[,colnum ] ) ) )
-              }else{
-                     return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
-                   }
+        }else{
+                return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
+             }
     }
     # regression
     # if(length(grep("lm",model$call))>0){
@@ -743,18 +972,39 @@ average_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, pr
 
       pred <- predict(model,newdata=current_mat,type="response")
       resids <- model$residuals
-      if(SN){
 
-        return(pred+resids)
+      if(SN){
+        # NEED TO UPDATE THIS TO USE OBSERVED VALUE FOR naturally_unexposed_patients AND remain_exposed_patients
+        pred_sim <- pred + resids
+
+            if(PS_impactFraction){
+              pred_sim[naturally_unexposed_patients] <- current_mat[naturally_unexposed_patients,colnum]
+              pred_sim[remain_exposed_patients] <- current_mat[remain_exposed_patients,colnum]
+            }
+
+        # return(pred+resids)
+        return(pred_sim)
 
       }
 
       #browser()
       #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
       #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
-      return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      # return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      pred_sim <- pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights))
+
+            if(PS_impactFraction){
+              pred_sim[naturally_unexposed_patients] <- current_mat[naturally_unexposed_patients,colnum]
+              pred_sim[remain_exposed_patients] <- current_mat[remain_exposed_patients,colnum]
+            }
+
+      # return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      return(pred_sim)
     }
-  }
+ }
+
+#####################################
+#####################################
 
 
   predict_df_discrete <- function(riskfactor, refval, data){
@@ -1333,6 +1583,25 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 ######################################################################################
 ######################################################################################
 ######################################################################################
+###################
+# Move outside for(i in 1:nsim)
+if(PS_impactFraction){
+
+                if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                      stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                }
+                new_PSIF_data <- data
+                Num_rows <- nrow(data)
+                which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                Num_exposed <- length(exposed_patients)
+                newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+
+                remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+          }
+###################
 
    for(i in 1:nsim){
 
@@ -1394,8 +1663,24 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
                   for(j in 1:length(the_order)){
 
                     if( the_order[j]  == riskfactor_col ){
+                          ################################
+                          if(PS_impactFraction){
+                            riskfactor_vals_check <- data[,riskfactor_col]
+                             if(is.numeric(riskfactor_vals_check)){
+                                  if(is.na(refval)) refval <- 0
+                                  if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                    stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                  }
+                                }
+                            if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                            if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                            if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
 
-                          current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                            current_mat <- new_PSIF_data
+
+                      }else{
+                            current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                      }
 
                     }else{
                             index <- which( mediatorNames[1,] == pathOrder[ 1, the_order_colNums1toN[j] ])
@@ -1404,11 +1689,19 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ the_order_colNums1toN[j] ],
-                                                                            current_mat = current_mat_riskfactor_refval,
-                                                                            model = mediator_models[[index]],
-                                                                            SN=TRUE)
-
+                                # current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ the_order_colNums1toN[j] ],
+                                #                                             current_mat = current_mat_riskfactor_refval,
+                                #                                             model = mediator_models[[index]],
+                                #                                             SN=TRUE)
+                                ###################################
+                                current_mat[,mediator_col[index]] <- do_sim_impact_fraction(colnum = pathspecific_col_list_orig[ the_order_colNums1toN[j] ],
+                                                                                                      current_mat = current_mat_riskfactor_refval,
+                                                                                                      model = mediator_models[[index]],
+                                                                                                      SN=TRUE,
+                                                                                                      PS_impactFraction = PS_impactFraction,
+                                                                                                      remain_exposed_patients = remain_exposed_patients,
+                                                                                                      naturally_unexposed_patients = naturally_unexposed_patients)
+                                ###################################
                           }
 
                           if(mediator_model_type[index]=='lm'){
@@ -1417,7 +1710,14 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
                                 mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
 
-                                current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                ##################################
+                                if(PS_impactFraction){
+                                      current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
+
+                                }else{
+                                      current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                }
+                                ##################################
                           }
 
                     }
@@ -1484,11 +1784,29 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
             if(start_again==FALSE){
                   if( col_list[1:N][perm_mat[i,number_rf_new]] == riskfactor_col){
-                         # assumes riskfactor is binary?
-                         current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                  ############################
+                         if(PS_impactFraction){
+                              riskfactor_vals_check <- data[,riskfactor_col]
+                              if(is.numeric(riskfactor_vals_check)){
+                                    if(is.na(refval)) refval <- 0
+                                    if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                          stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                    }
+                                }
 
-                         joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
+                             if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                             if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                             if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
 
+                             current_mat <- new_PSIF_data
+
+                       }else{
+                             # assumes riskfactor is binary?
+                             current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                       }
+
+                       joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
+                  #############################
                   }else{
                             index <- which( mediatorNames[1,] == pathOrder[ 1, perm_mat[i,number_rf_new] ])
 
@@ -1496,12 +1814,19 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                # SET SN=TRUE as dont want SN=FALSE option
-                                current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
-                                                                            current_mat = current_mat_riskfactor_refval,
-                                                                            model = mediator_models[[index]],
-                                                                            SN=TRUE)
-
+                                # current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
+                                #                                             current_mat = current_mat_riskfactor_refval,
+                                #                                             model = mediator_models[[index]],
+                                #                                             SN=TRUE)
+                                #######################
+                                 current_mat[,mediator_col[index]] <- do_sim_impact_fraction(colnum = pathspecific_col_list_orig[ perm_mat[i,number_rf_new] ],
+                                                                                             current_mat = current_mat_riskfactor_refval,
+                                                                                             model = mediator_models[[index]],
+                                                                                             SN=TRUE,
+                                                                                             PS_impactFraction = PS_impactFraction,
+                                                                                             remain_exposed_patients = remain_exposed_patients,
+                                                                                             naturally_unexposed_patients = naturally_unexposed_patients)
+                                #######################
                                 joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
                             }
 
@@ -1510,8 +1835,13 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
                               new_data_direct <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
                               mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
-
-                              current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                              #######
+                              if(PS_impactFraction){
+                                    current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
+                              }else{
+                                    current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                              }
+                              #######
 
                               joint_PAF_vec[i] <- impact_fraction(model=response_model, data=data, new_data=current_mat,calculation_method=calculation_method, prev=prev,ci=FALSE)
 
@@ -1529,7 +1859,25 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
                     if(col_list[1:N][perm_mat[i,j]] == riskfactor_col ){
 
-                          current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          ###########
+                          if(PS_impactFraction){
+                                riskfactor_vals_check <- data[,riskfactor_col]
+                                if(is.numeric(riskfactor_vals_check)){
+                                      if(is.na(refval)) refval <- 0
+                                            if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                            stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                        }
+                                      }
+                                if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                                if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                                if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
+
+                                current_mat <- new_PSIF_data
+
+                          }else{
+                                current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          }
+                          ###########
 
                     }else{
 
@@ -1539,10 +1887,19 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
-                                                                            current_mat = current_mat_riskfactor_refval,
-                                                                            model = mediator_models[[index]],
-                                                                            SN=TRUE)
+                                # current_mat[,mediator_col[index]] <- do_sim(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
+                                #                                             current_mat = current_mat_riskfactor_refval,
+                                #                                             model = mediator_models[[index]],
+                                #                                             SN=TRUE)
+                                ############################
+                                current_mat[,mediator_col[index]] <- do_sim_impact_fraction(colnum = pathspecific_col_list_orig[ perm_mat[i,j] ],
+                                                                                            current_mat = current_mat_riskfactor_refval,
+                                                                                            model = mediator_models[[index]],
+                                                                                            SN=TRUE,
+                                                                                            PS_impactFraction = PS_impactFraction,
+                                                                                            remain_exposed_patients = remain_exposed_patients,
+                                                                                            naturally_unexposed_patients = naturally_unexposed_patients)
+                                ############################
                           }
 
                           if(mediator_model_type[index]=='lm'){
@@ -1550,9 +1907,13 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
                                 new_data_direct <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
                                 mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
-
-                                current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
-
+                                ####################
+                                if(PS_impactFraction){
+                                      current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
+                                }else{
+                                      current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                }
+                                ####################
                           }
 
                     }
@@ -1631,72 +1992,201 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
 
 
-sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_list){
+# sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_list){
+#
+#   if(is.factor(current_mat[,col_num])) current_mat[,col_num] <- levels(data[,col_num])[1]
+#   if(is.numeric(current_mat[,col_num])) current_mat[,col_num] <- 0
+#
+#   colname <- colnames(current_mat)[col_num]
+#
+#   for(i in 1:(length(parent_list)-1)){
+#     if(colname %in% parent_list[[i]]){
+#       if(length(table(current_mat[,col_list[[i]]] ))==1) next
+#
+#       if(is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- factor(do_sim(col_list[i],current_mat,model_list[[i]]),levels=levels(current_mat[,col_list[i]]))
+#       if(!is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- do_sim(col_list[i],current_mat,model_list[[i]],SN=TRUE)
+#     }
+#   }
+#   current_mat
+# }
 
-  if(is.factor(current_mat[,col_num])) current_mat[,col_num] <- levels(data[,col_num])[1]
-  if(is.numeric(current_mat[,col_num])) current_mat[,col_num] <- 0
+# # do_sim <- function(colnum,current_mat, model,SN=FALSE){
+# do_sim <- function(colnum,current_mat, model,SN=TRUE){
+#   ## polr
+#   # if(names(model)[2]=='zeta'){
+#   if(class(model)[1]=="polr"){
+#
+#     probs <- predict(model,newdata=current_mat,type="probs")
+#     mynames <- colnames(probs)
+#     # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+#       if( is.factor(current_mat[,colnum ]) ){
+#                    return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
+#                                                         levels=levels(current_mat[,colnum ] ) ) )
+#         }else{
+#                    return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+#              }
+#   }
+#   # glm
+#   # if(length(grep("glm",model$call))>0){
+#   if(class(model)[1]=="glm"){
+#
+#     probs <- predict(model,newdata=current_mat,type="response")
+#     if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
+#     # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
+#     if( is.factor(current_mat[,colnum ]) ){
+#              return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
+#                                                                                       levels=levels(current_mat[,colnum ] ) ) )
+#       }else{
+#              return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
+#            }
+#   }
+#   # regression
+#   # if(length(grep("lm",model$call))>0){
+#   if(class(model)[1]=="lm"){
+#
+#     pred <- predict(model,newdata=current_mat,type="response")
+#     resids <- model$residuals
+#     if(SN){
+#
+#       return(pred+resids)
+#
+#     }
+#
+#     #browser()
+#     #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
+#     #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
+#     return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+#   }
+# }
+#########################################################
+### Need to Add in
+#########################################################
+##################################
+##################################
+ ### SET SN = TRUE AS DEFAULT AS WANT SN=TRUE FOR CONTINOUS MEDIATOR NOTE THE DEFAULT WAS PREVIOUSLY SN=FALSE BUT WE WANT SN=TRUE FOR CONTINUOUS MEDIATOR
+ do_sim_impact_fraction <- function(colnum,current_mat, model,SN=TRUE, PS_impactFraction = FALSE, remain_exposed_patients = NULL, naturally_unexposed_patients = NULL){
+   ## polr
+    # if(names(model)[2]=='zeta'){
+    if(class(model)[1]=="polr"){
 
-  colname <- colnames(current_mat)[col_num]
+      probs <- predict(model,newdata=current_mat,type="probs")
+      mynames <- colnames(probs)
+      ######
+      if(PS_impactFraction){
 
-  for(i in 1:(length(parent_list)-1)){
-    if(colname %in% parent_list[[i]]){
-      if(length(table(current_mat[,col_list[[i]]] ))==1) next
+            if(is.null(remain_exposed_patients) || is.null(naturally_unexposed_patients) ){
+                  stop("Must provide argument for naturally_unexposed_patients and remain_exposed_patients.")
+            }
 
-      if(is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- factor(do_sim(col_list[i],current_mat,model_list[[i]]),levels=levels(current_mat[,col_list[i]]))
-      if(!is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- do_sim(col_list[i],current_mat,model_list[[i]],SN=TRUE)
-    }
-  }
-  current_mat
-}
+            ###
+            # Define levels as used in for loop
+            levels <- sort(unique(current_mat[,colnum]))
+            if(is.factor(current_mat[,colnum])) levels <- levels(current_mat[,colnum])
+            ###
+            for(j in 1:length(levels)){
+                   # NEED TO UPDATE SO HAS FACTOR, or NUMERICAL
+                   j_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% levels[j] )
+                   j_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% levels[j])
 
-#do_sim <- function(colnum,current_mat, model,SN=FALSE){
-do_sim <- function(colnum,current_mat, model,SN=TRUE){
-  ## polr
-  # if(names(model)[2]=='zeta'){
-  if(class(model)[1]=="polr"){
+                   probs[naturally_unexposed_patients,j] <- j_in_naturally_unexposed_patients*1
+                   probs[remain_exposed_patients,j] <- j_in_remain_exposed_patients*1
+            }
 
-    probs <- predict(model,newdata=current_mat,type="probs")
-    mynames <- colnames(probs)
-    # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+      }
+      ######
+      # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
       if( is.factor(current_mat[,colnum ]) ){
-                   return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
-                                                        levels=levels(current_mat[,colnum ] ) ) )
+                return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
+                                   levels=levels(current_mat[,colnum ] ) ) )
         }else{
-                   return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+                return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
              }
-  }
-  # glm
-  # if(length(grep("glm",model$call))>0){
-  if(class(model)[1]=="glm"){
-
-    probs <- predict(model,newdata=current_mat,type="response")
-    if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
-    # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
-    if( is.factor(current_mat[,colnum ]) ){
-             return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
-                                                                                      levels=levels(current_mat[,colnum ] ) ) )
-      }else{
-             return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
-           }
-  }
-  # regression
-  # if(length(grep("lm",model$call))>0){
-  if(class(model)[1]=="lm"){
-
-    pred <- predict(model,newdata=current_mat,type="response")
-    resids <- model$residuals
-    if(SN){
-
-      return(pred+resids)
 
     }
+    # glm
+    # if(length(grep("glm",model$call))>0){
+    if(class(model)[1]=="glm"){
 
-    #browser()
-    #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
-    #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
-    return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
-  }
-}
+      probs <- predict(model,newdata=current_mat,type="response")
+      #####
+      #########
+      if(PS_impactFraction){
+
+             if(is.null(remain_exposed_patients) || is.null(naturally_unexposed_patients) ){
+                  stop("Must provide argument for remain_exposed_patients and naturally_unexposed_patients.")
+             }
+
+             # TRY COMMENTING OUT THIS SINCE probs is only defined for P(Y=1) above
+             # # Assumes refval is 0 and other value is 1
+             # zero_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 0 )
+             # zero_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 0)
+             #
+             # probs[naturally_unexposed_patients,1] <- zero_in_naturally_unexposed_patients*1
+             # probs[remain_exposed_patients,1] <- zero_in_remain_exposed_patients*1
+
+
+             # one_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 1 )
+             # one_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 1)
+             #
+             # probs[naturally_unexposed_patients,2] <- one_in_naturally_unexposed_patients*1
+             # probs[remain_exposed_patients,2] <- one_in_remain_exposed_patients*1
+
+             one_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 1 )
+             one_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 1)
+
+             probs[naturally_unexposed_patients] <- one_in_naturally_unexposed_patients*1
+             probs[remain_exposed_patients] <- one_in_remain_exposed_patients*1
+      }
+      #########
+      #####
+      if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
+      # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
+      if( is.factor(current_mat[,colnum ]) ){
+                 return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
+                                     levels=levels(current_mat[,colnum ] ) ) )
+        }else{
+                return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
+             }
+    }
+    # regression
+    # if(length(grep("lm",model$call))>0){
+    if(class(model)[1]=="lm"){
+
+      pred <- predict(model,newdata=current_mat,type="response")
+      resids <- model$residuals
+
+      if(SN){
+        # NEED TO UPDATE THIS TO USE OBSERVED VALUE FOR naturally_unexposed_patients AND remain_exposed_patients
+        pred_sim <- pred + resids
+
+            if(PS_impactFraction){
+              pred_sim[naturally_unexposed_patients] <- current_mat[naturally_unexposed_patients,colnum]
+              pred_sim[remain_exposed_patients] <- current_mat[remain_exposed_patients,colnum]
+            }
+
+        # return(pred+resids)
+        return(pred_sim)
+
+      }
+
+      #browser()
+      #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
+      #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
+      # return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      pred_sim <- pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights))
+
+            if(PS_impactFraction){
+              pred_sim[naturally_unexposed_patients] <- current_mat[naturally_unexposed_patients,colnum]
+              pred_sim[remain_exposed_patients] <- current_mat[remain_exposed_patients,colnum]
+            }
+
+      # return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      return(pred_sim)
+    }
+ }
+
+#####################################
+#####################################
 
 make_formula <- function(parents,outcome_node,common='',spline_nodes=c(),df_spline_nodes=3){
   if(length(parents)==0) return(paste(outcome_node,"~ 1"))
@@ -1886,21 +2376,21 @@ predict_df_discrete <- function(riskfactor, refval, data){
 #'                  # riskfactor = "exercise", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95)
 #'
 #' joint_pspaf(data=stroke_reduced, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, vars = c("exercise","high_blood_pressure","lipids","waist_hip_ratio"),response_model = response_model, mediator_models = mediator_models, riskfactor = "exercise", refval=0, calculation_method = "D", ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95)
-joint_pspaf <- function(data, model_list, parent_list, node_vec, prev=.09, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95){
+joint_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec, prev=.09, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
   if(!node_order(parent_list=parent_list,node_vec=node_vec)){
     stop("ancestors must be specified before descendants in node_vec")
   }
   if(!is.null(vars) & !all(vars %in% node_vec)){
     stop("Not all requested variables are in node_vec.  Check spelling")
   }
-if(!ci) return(joint_pspaf_inner(data=data,ind=1:nrow(data), model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev,vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method))
-  res <- boot::boot(data=data,statistic=joint_pspaf_inner,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method)
+if(!ci) return(joint_pspaf_inner_impactfraction(data=data,ind=1:nrow(data), model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev,vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method,PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name ))
+  res <- boot::boot(data=data,statistic=joint_pspaf_inner_impactfraction,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name)
   return(boot::boot.ci(res,type=ci_type))
 
 }
 
 
-joint_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, prev=.09,vars=NULL, response_model, mediator_models, riskfactor, refval, calculation_method ){
+joint_pspaf_inner_impactfraction <- function(data, ind, model_list, parent_list, node_vec, prev=.09,vars=NULL, response_model, mediator_models, riskfactor, refval, calculation_method, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case"){
 
   library(splines)
   ################################
@@ -1958,34 +2448,111 @@ joint_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, prev
   }
 
 
-  sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_list){
+  # sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_list){
+  #
+  #   if(is.factor(current_mat[,col_num])) current_mat[,col_num] <- levels(data[,col_num])[1]
+  #   if(is.numeric(current_mat[,col_num])) current_mat[,col_num] <- 0
+  #
+  #   colname <- colnames(current_mat)[col_num]
+  #
+  #   for(i in 1:(length(parent_list)-1)){
+  #     if(colname %in% parent_list[[i]]){
+  #       if(length(table(current_mat[,col_list[[i]]] ))==1) next
+  #
+  #       if(is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- factor(do_sim(col_list[i],current_mat,model_list[[i]]),levels=levels(current_mat[,col_list[i]]))
+  #       if(!is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- do_sim(col_list[i],current_mat,model_list[[i]],SN=TRUE)
+  #     }
+  #   }
+  #   current_mat
+  # }
 
-    if(is.factor(current_mat[,col_num])) current_mat[,col_num] <- levels(data[,col_num])[1]
-    if(is.numeric(current_mat[,col_num])) current_mat[,col_num] <- 0
-
-    colname <- colnames(current_mat)[col_num]
-
-    for(i in 1:(length(parent_list)-1)){
-      if(colname %in% parent_list[[i]]){
-        if(length(table(current_mat[,col_list[[i]]] ))==1) next
-
-        if(is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- factor(do_sim(col_list[i],current_mat,model_list[[i]]),levels=levels(current_mat[,col_list[i]]))
-        if(!is.factor(current_mat[,col_list[i]])) current_mat[,col_list[i]] <- do_sim(col_list[i],current_mat,model_list[[i]],SN=TRUE)
-      }
-    }
-    current_mat
-  }
 
 
-
-  #do_sim <- function(colnum,current_mat, model,SN=FALSE){
-  do_sim <- function(colnum,current_mat, model,SN=TRUE){
+  # # do_sim <- function(colnum,current_mat, model,SN=FALSE){
+  # do_sim <- function(colnum,current_mat, model,SN=TRUE){
+  #   ## polr
+  #   # if(names(model)[2]=='zeta'){
+  #   if(class(model)[1]=="polr"){
+  #
+  #     probs <- predict(model,newdata=current_mat,type="probs")
+  #     mynames <- colnames(probs)
+  #     # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+  #     if( is.factor(current_mat[,colnum ]) ){
+  #               return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
+  #                                  levels=levels(current_mat[,colnum ] ) ) )
+  #       }else{
+  #               return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
+  #            }
+  #
+  #   }
+  #   # glm
+  #   # if(length(grep("glm",model$call))>0){
+  #   if(class(model)[1]=="glm"){
+  #
+  #     probs <- predict(model,newdata=current_mat,type="response")
+  #     if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
+  #     # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
+  #     if( is.factor(current_mat[,colnum ]) ){
+  #                return( factor( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}),
+  #                                    levels=levels(current_mat[,colnum ] ) ) )
+  #       }else{
+  #               return( apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}) )
+  #            }
+  #   }
+  #   # regression
+  #   # if(length(grep("lm",model$call))>0){
+  #   if(class(model)[1]=="lm"){
+  #
+  #     pred <- predict(model,newdata=current_mat,type="response")
+  #     resids <- model$residuals
+  #     if(SN){
+  #
+  #       return(pred+resids)
+  #
+  #     }
+  #
+  #     #browser()
+  #     #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
+  #     #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
+  #     return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+  #   }
+  # }
+  #########################################################
+### Need to Add in
+#########################################################
+##################################
+##################################
+ ### SET SN = TRUE AS DEFAULT AS WANT SN=TRUE FOR CONTINOUS MEDIATOR NOTE THE DEFAULT WAS PREVIOUSLY SN=FALSE BUT WE WANT SN=TRUE FOR CONTINUOUS MEDIATOR
+ do_sim_impact_fraction <- function(colnum,current_mat, model,SN=TRUE, PS_impactFraction = FALSE, remain_exposed_patients = NULL, naturally_unexposed_patients = NULL){
     ## polr
     # if(names(model)[2]=='zeta'){
     if(class(model)[1]=="polr"){
 
       probs <- predict(model,newdata=current_mat,type="probs")
       mynames <- colnames(probs)
+      ######
+      if(PS_impactFraction){
+
+            if(is.null(remain_exposed_patients) || is.null(naturally_unexposed_patients) ){
+                  stop("Must provide argument for naturally_unexposed_patients and remain_exposed_patients.")
+            }
+
+            ###
+            # Define levels as used in for loop
+            levels <- sort(unique(current_mat[,colnum]))
+            if(is.factor(current_mat[,colnum])) levels <- levels(current_mat[,colnum])
+            ###
+            for(j in 1:length(levels)){
+                   # NEED TO UPDATE SO HAS FACTOR, or NUMERICAL
+                   j_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% levels[j] )
+                   j_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% levels[j])
+
+                   probs[naturally_unexposed_patients,j] <- j_in_naturally_unexposed_patients*1
+                   probs[remain_exposed_patients,j] <- j_in_remain_exposed_patients*1
+            }
+
+      }
+      ######
       # return(apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}))
       if( is.factor(current_mat[,colnum ]) ){
                 return( factor( apply(probs,1,function(x){base::sample(mynames,size=1,prob=x)}),
@@ -2000,6 +2567,37 @@ joint_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, prev
     if(class(model)[1]=="glm"){
 
       probs <- predict(model,newdata=current_mat,type="response")
+      #####
+      #########
+      if(PS_impactFraction){
+
+             if(is.null(remain_exposed_patients) || is.null(naturally_unexposed_patients) ){
+                  stop("Must provide argument for remain_exposed_patients and naturally_unexposed_patients.")
+             }
+
+             # TRY COMMENTING OUT THIS SINCE probs is only defined for P(Y=1) above
+             # # Assumes refval is 0 and other value is 1
+             # zero_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 0 )
+             # zero_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 0)
+             #
+             # probs[naturally_unexposed_patients,1] <- zero_in_naturally_unexposed_patients*1
+             # probs[remain_exposed_patients,1] <- zero_in_remain_exposed_patients*1
+
+
+             # one_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 1 )
+             # one_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 1)
+             #
+             # probs[naturally_unexposed_patients,2] <- one_in_naturally_unexposed_patients*1
+             # probs[remain_exposed_patients,2] <- one_in_remain_exposed_patients*1
+
+             one_in_naturally_unexposed_patients <- ( current_mat[naturally_unexposed_patients,colnum] %in% 1 )
+             one_in_remain_exposed_patients <- (current_mat[remain_exposed_patients,colnum] %in% 1)
+
+             probs[naturally_unexposed_patients] <- one_in_naturally_unexposed_patients*1
+             probs[remain_exposed_patients] <- one_in_remain_exposed_patients*1
+      }
+      #########
+      #####
       if(is.null(levels(current_mat[,colnum]))) return(apply(cbind(1-probs,probs),1,function(x){base::sample(c(0,1),size=1,prob=x)}))
       # return(apply(cbind(1-probs,probs),1,function(x){base::sample(levels(current_mat[,colnum]),size=1,prob=x)}))
       if( is.factor(current_mat[,colnum ]) ){
@@ -2015,18 +2613,40 @@ joint_pspaf_inner <- function(data, ind, model_list, parent_list, node_vec, prev
 
       pred <- predict(model,newdata=current_mat,type="response")
       resids <- model$residuals
-      if(SN){
 
-        return(pred+resids)
+      if(SN){
+        # NEED TO UPDATE THIS TO USE OBSERVED VALUE FOR naturally_unexposed_patients AND remain_exposed_patients
+        pred_sim <- pred + resids
+
+            if(PS_impactFraction){
+              pred_sim[naturally_unexposed_patients] <- current_mat[naturally_unexposed_patients,colnum]
+              pred_sim[remain_exposed_patients] <- current_mat[remain_exposed_patients,colnum]
+            }
+
+        # return(pred+resids)
+        return(pred_sim)
 
       }
 
       #browser()
       #return(pred + sample(summary(model)$residuals,length(resids),replace=TRUE))
       #return(pred + rnorm(length(resids),mean=0,sd=.1*sd(resids)))
-      return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      # return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      pred_sim <- pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights))
+
+            if(PS_impactFraction){
+              pred_sim[naturally_unexposed_patients] <- current_mat[naturally_unexposed_patients,colnum]
+              pred_sim[remain_exposed_patients] <- current_mat[remain_exposed_patients,colnum]
+            }
+
+      # return(pred + sample(resids,length(resids),replace=TRUE, prob=model$weights/sum(model$weights)))
+      return(pred_sim)
     }
-  }
+ }
+
+#####################################
+#####################################
+
   ##################################
     ########################  load in impact fraction functions:
   impact_fraction <- function(model, data, new_data, calculation_method="B",prev=NULL,ci=FALSE,boot_rep=100,t_vector=NULL, ci_level=0.95, ci_type=c("norm")){
@@ -2531,6 +3151,26 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
   pathspecific_col_list_orig <- pathspecific_col_list
 
   riskfactor_col <- (1:length(colnames(data)))[colnames(data) %in% riskfactor]
+
+########################################
+  if(PS_impactFraction){
+
+                if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                      stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                }
+                new_PSIF_data <- data
+                Num_rows <- nrow(data)
+                which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                Num_exposed <- length(exposed_patients)
+                newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+
+                remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+          }
+########################################
+
   ######
   ## End of material to MOVE above for loop
   ######
@@ -2554,9 +3194,29 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
                     for(j in 1:(length(col_list) - 1) ){
 
                     if(col_list[j] == riskfactor_col ){
+                          ########################################
+                          if(PS_impactFraction){
+                                #####
+                                riskfactor_vals_check <- data[,riskfactor_col]
+                                 if(is.numeric(riskfactor_vals_check)){
+                                      if(is.na(refval)) refval <- 0
+                                      if(!all(riskfactor_vals_check %in% c(0,1)) || refval !=0){
+                                        stop("Numeric risk factors must be 0/1, with the reference set to 0")
+                                      }
+                                    }
+                                # new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                                if(is.numeric(( new_PSIF_data[newly_unexposed_patients,which_col] ))) new_PSIF_data[newly_unexposed_patients,which_col] <- refval
+                                if(is.character( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- as.character(refval)
+                                if(is.factor( new_PSIF_data[newly_unexposed_patients,which_col] )) new_PSIF_data[newly_unexposed_patients,which_col] <- factor(refval,levels = levels( new_PSIF_data[newly_unexposed_patients,which_col] ))
+                                #####
 
-                          current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                                current_mat <- new_PSIF_data
 
+                          }else{
+
+                                current_mat <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
+                          }
+                          #########################################
                     }else{
 
                           index <- which( mediator_col == col_list[j]  )
@@ -2565,10 +3225,19 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 
                                 current_mat_riskfactor_refval <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
-                                current_mat[,col_list[j]] <- do_sim(colnum = col_list[j],
+                                # current_mat[,col_list[j]] <- do_sim(colnum = col_list[j],
+                                #                                             current_mat = current_mat_riskfactor_refval,
+                                #                                             model = mediator_models[[index]],
+                                #                                             SN=TRUE)
+                                ##################################
+                                current_mat[,col_list[j]] <- do_sim_impact_fraction(colnum = col_list[j],
                                                                             current_mat = current_mat_riskfactor_refval,
                                                                             model = mediator_models[[index]],
-                                                                            SN=TRUE)
+                                                                            SN=TRUE,
+                                                                            PS_impactFraction = PS_impactFraction,
+                                                                            remain_exposed_patients = remain_exposed_patients,
+                                                                            naturally_unexposed_patients = naturally_unexposed_patients)
+                                ##################################
                           }
 
                           if(mediator_model_type[index]=='lm'){
@@ -2576,9 +3245,14 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
                                 new_data_direct <- predict_df_discrete(riskfactor=riskfactor, refval=refval, data = current_mat)
 
                                 mediator_effects <- predict(mediator_models[[index]]) - predict(mediator_models[[index]],new_data_direct)
+                                #################################
+                                if(PS_impactFraction){
+                                      current_mat[newly_unexposed_patients, mediator_col[index]] <- current_mat[newly_unexposed_patients,mediator_col[index]] - mediator_effects[newly_unexposed_patients]
 
-                                current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
-
+                                }else{
+                                      current_mat[,mediator_col[index]] <- current_mat[,mediator_col[index]] - mediator_effects
+                                }
+                                #################################
                           }
 
                     }
@@ -2591,3 +3265,89 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 ########################################
 
 }
+
+############################################################################################
+############################################################################################
+# Added in extract_ci fucntion since not recognised for some unknown reason if not moved in
+#############################################################################################
+############################################################################################
+extract_ci <- function(res,model_type,t_vector,ci_level,ci_type,continuous=FALSE){
+if(continuous){
+
+  d <- data.frame(matrix(ncol=3 + 2*length(ci_type),nrow=length(res$t0)))
+  colnames(d) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate",rep("",2*length(ci_type)))
+  for(i in 1:length(ci_type)) colnames(d)[(2+2*i):(3+2*i)] <- c(paste0(ci_type[i],"_lower"),paste0(ci_type[i],"_upper"))
+
+
+
+  d[,1] <- res$t0
+  d[,2] <- apply(res$t,2,mean,na.rm=TRUE)-res$t0
+  d[,3] <- 2*res$t0-apply(res$t,2,mean,na.rm=TRUE)
+  for(j in 1:length(res$t0)){
+    for(i in 1:length(ci_type)){
+
+      if(ci_type[i]=="norm") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="norm", index=j)$normal[2:3]
+      if(ci_type[i]=="basic") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="basic", index=j)$basic[4:5]
+      if(ci_type[i]=="perc") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="perc", index=j)$perc[4:5]
+      if(ci_type[i]=="bca") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="bca", index=j)$bca[4:5]
+    }
+  }
+  rownames(d) <- t_vector
+  for(i in 1:ncol(d)) d[,i] <- signif(d[,i],3)
+  return(d)
+
+}
+  if(model_type!="coxph"){
+
+    v <- numeric(3 + 2*length(ci_type))
+    names(v) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate",rep("",2*length(ci_type)))
+    for(i in 1:length(ci_type)) names(v)[(2+2*i):(3+2*i)] <- c(paste0(ci_type[i],"_lower"),paste0(ci_type[i],"_upper"))
+    v[1] <- res$t0
+    v[2] <- mean(res$t)-res$t0
+    v[3] <- 2*res$t0-mean(res$t)
+
+    for(i in 1:length(ci_type)){
+      if(ci_type[i]=="norm") v[(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="norm")$normal[2:3]
+      if(ci_type[i]=="basic") v[(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="basic")$basic[4:5]
+      if(ci_type[i]=="perc") v[(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="perc")$perc[4:5]
+          if(ci_type[i]=="bca") v[(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="bca")$bca[4:5]
+    }
+    v <- signif(v,digits=3)
+    return(v)
+
+  }
+  if(model_type=="coxph"){
+
+    d <- data.frame(matrix(ncol=3 + 2*length(ci_type),nrow=length(t_vector)))
+    colnames(d) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate",rep("",2*length(ci_type)))
+    for(i in 1:length(ci_type)) colnames(d)[(2+2*i):(3+2*i)] <- c(paste0(ci_type[i],"_lower"),paste0(ci_type[i],"_upper"))
+
+
+
+    d[,1] <- res$t0
+    d[,2] <- apply(res$t,2,mean)-res$t0
+    d[,3] <- 2*res$t0-apply(res$t,2,mean)
+    for(j in 1:length(t_vector)){
+    for(i in 1:length(ci_type)){
+
+      if(ci_type[i]=="norm") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="norm", index=j)$normal[2:3]
+      if(ci_type[i]=="basic") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="basic", index=j)$basic[4:5]
+      if(ci_type[i]=="perc") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="perc", index=j)$perc[4:5]
+      if(ci_type[i]=="bca") d[j,(2+2*i):(3+2*i)] <- boot::boot.ci(res, conf=ci_level,type="bca", index=j)$bca[4:5]
+    }
+    }
+    rownames(d) <- t_vector
+    for(i in 1:ncol(d)) d[,i] <- signif(d[,i],3)
+    return(d)
+  }
+}
+
+
+
+
+
+
+
+
+
+

@@ -386,7 +386,8 @@ average_paf_inner <- function(data, ind, model_list, parent_list, node_vec, prev
 
 
 
-  do_sim <- function(colnum,current_mat, model,SN=FALSE){
+  # do_sim <- function(colnum,current_mat, model,SN=FALSE){
+  do_sim <- function(colnum,current_mat, model,SN=TRUE){
     ## polr
     #if(names(model)[2]=='zeta'){
     if(class(model)[1]=="polr"){
@@ -660,8 +661,8 @@ sim_outnode <- function(data,col_num, current_mat, parent_list, col_list,model_l
 }
 
 
-
-do_sim <- function(colnum,current_mat, model,SN=FALSE){
+# do_sim <- function(colnum,current_mat, model,SN=FALSE){
+do_sim <- function(colnum,current_mat, model,SN=TRUE){
   ## polr
   #if(names(model)[2]=='zeta'){
   if(class(model)[1]=="polr"){
@@ -946,8 +947,8 @@ joint_paf_inner <- function(data, ind, model_list, parent_list, node_vec, prev=.
   }
 
 
-
-  do_sim <- function(colnum,current_mat, model,SN=FALSE){
+  #do_sim <- function(colnum,current_mat, model,SN=FALSE){
+  do_sim <- function(colnum,current_mat, model,SN=TRUE){
     ## polr
     #if(names(model)[2]=='zeta'){
     if(class(model)[1]=="polr"){
