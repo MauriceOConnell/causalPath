@@ -2,7 +2,8 @@ plot_joint_PSPAF_impactfraction <- function(data=data, model_list = model_list, 
                   vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
                   riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
                   PS_impactFraction = TRUE, percent = 0.3, method = "predict", response_name = "case",
-                  plot = c("all_exclTotalPAF", "average_PSIFs_inclTotalPAF", "all_inclTotalPAF", "Average PAF phys", "Average PAF subhtn", "Average PAF apob_apoa", "Average PAF whr", "TotalPAF", "phys", "subhtn", "apob_apoa", "whr") ){
+                  plot = c("all_exclTotalPAF", "average_PSIFs_inclTotalPAF", "all_inclTotalPAF", "Average PAF phys", "Average PAF subhtn", "Average PAF apob_apoa", "Average PAF whr", "TotalPAF", "phys", "subhtn", "apob_apoa", "whr"),
+                  simulate = FALSE, NumSimulate = 0){
 
 
       dat_percent <- data.frame()
@@ -25,43 +26,151 @@ plot_joint_PSPAF_impactfraction <- function(data=data, model_list = model_list, 
       # store_observed <- data.frame()
       # store_observed <- data.frame(matrix(nrow = length(percent)*(length(vars)*( length(vars) + 1) + 1) , ncol = 7))
 
+       ###########################
+      # simulate == TRUE if user wants to get the average of the average pathway-specific impact fraction
+      # NumSimulate is the number of simulations of average pathway-specific impact fraction to get the average of
+      if(simulate){
+            # Numrows*Numcols*Numsimulate
+            Numrows <- length(percent)*(length(vars)*( length(vars) + 1) + 1)
+            Numcols <- 7
+            # initialiseZeros <- rep(0, 365*6*4)
+            # initialiseZeros <- rep(0, Numrows*Numcols*NumSimulate)
+            #
+            # store_predict_array <- array(data = initialiseZeros, dim = c(Numrows, Numcols, NumSimulate))
+            #
+            # colnames(store_predict_array) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate","norm_lower", "norm_upper", "method","percent")
+
+      }
+      ###########################
+
       colnames(store_predict) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate","norm_lower", "norm_upper", "method","percent")
       # colnames(store_observed) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate","norm_lower", "norm_upper", "method","percent")
 
       t_vector = c(paste0(rep(node_vec[node_vec %in% vars],times=rep(length(vars),length(vars))),'_',rep(1:length(vars),length(vars))),paste0("Average PAF ", node_vec[node_vec %in% vars]),'TotalPAF')
       row_i <- 1
-      for(j in percent ){
+            if(simulate == TRUE){
 
-            # if( "predict" %in% c("predict","observed")){
+                  if(NumSimulate == 0){ stop("Must assign NumSimulate to a numerical integer value other than zero. NumSimulate is the number of simulations to perform to get the average of the average pathway-specific impact fraction.") }
 
-                  # store_predict <- ps_paf_impactfraction(response_model= response_model, mediator_models = mediator_models, riskfactor = "phys",refval = 0,data = newd, prev = 0.0035/0.9965, ci=TRUE,boot_rep=100,ci_level=0.95,ci_type=c("norm"), PS_impactFraction = TRUE, percent = j, method = "predict", response_name ="case" )
+                  for(nsims in 1:NumSimulate){
+                        row_i <- 1
+                        for(j in percent ){
 
-                  store_predict[  (1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i) , 1:5] <- average_pspaf_impactfraction(data=newd, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = 3,
-                                                                                                                                                        vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
-                                                                                                                                                        riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
-                                                                                                                                                        PS_impactFraction = TRUE, percent =j, method = "predict", response_name = "case")
+                              # if( "predict" %in% c("predict","observed")){
 
-                  # t_vector should coincide with rownames
-                  store_predict[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),6] <- t_vector
+                              # store_predict <- ps_paf_impactfraction(response_model= response_model, mediator_models = mediator_models, riskfactor = "phys",refval = 0,data = newd, prev = 0.0035/0.9965, ci=TRUE,boot_rep=100,ci_level=0.95,ci_type=c("norm"), PS_impactFraction = TRUE, percent = j, method = "predict", response_name ="case" )
 
-                  store_predict[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),7] <- j*100
+                              store_predict[  (1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i) , 1:5] <- average_pspaf_impactfraction(data=newd, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = 3,
+                                                                                                                                                                                    vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
+                                                                                                                                                                                    riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
+                                                                                                                                                                                    PS_impactFraction = TRUE, percent =j, method = "predict", response_name = "case")
 
-            # }
+                              # t_vector should coincide with rownames
+                              store_predict[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),6] <- t_vector
 
-            # if( "observed" %in% c("predict","observed")){
-            #
-            #       store_observed <- average_pspaf_impactfraction(data=newd, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = 3,
-            #                         vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
-            #                         riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
-            #                         PS_impactFraction = TRUE, percent =j, method = "observed", response_name = "case")
-                  #
-                  # # t_vector should coincide with rownames
-                  # store_observed[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),6] <- t_vector
-            #
-            # }
+                              store_predict[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),7] <- rep( j*100,
+                                                                                                                                                                times = length( (1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i) ) )
 
-            row_i <- row_i + 1
+                              # }
 
+                              # if( "observed" %in% c("predict","observed")){
+                              #
+                              #       store_observed <- average_pspaf_impactfraction(data=newd, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = 3,
+                              #                         vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
+                              #                         riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
+                              #                         PS_impactFraction = TRUE, percent =j, method = "observed", response_name = "case")
+                                    #
+                                    # # t_vector should coincide with rownames
+                                    # store_observed[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),6] <- t_vector
+                              #
+                              # }
+
+                              row_i <- row_i + 1
+                    }
+                              # library(abind)
+                              assign(paste0("store_predict_", nsims), store_predict)
+                              # dim(store_predict_ )
+                              # class(store_predict_)
+                              # head(store_predict_)
+                              # nsims update
+
+                              if(nsims == 1){
+                                    data_unlist_forarray <- c( unlist(store_predict_1[,1:(Numcols - 2)]) )
+                                    # class(data_unlist_forarray)
+                                    # length(data_unlist_forarray)
+                                    # head(data_unlist_forarray)
+                              }else{
+                                    data_unlist_forarray <- c( data_unlist_forarray, unlist( eval(parse(text=( paste0("store_predict_", nsims,"[,1:(Numcols - 2)]") ))) ) )
+                              }
+
+                              # length(data_unlist_forarray)
+                              # class(data_unlist_forarray)
+                              # head(data_unlist_forarray)
+
+                              if( nsims == NumSimulate ){
+                                    # An array can be of one data type only
+                                    Array1 <- array(data = data_unlist_forarray,
+                                                    dim = c(Numrows, (Numcols - 2), NumSimulate),
+                                                    dimnames = list(rownames(store_predict_1),
+                                                                    colnames(store_predict_1[,1:(Numcols - 2)] )))
+
+                                    Array1.mean <- apply(Array1, c(1,2), mean)
+                                    # head(Array1.mean)
+                                    # dim(Array1.mean)
+                                    # class(Array1.mean)
+
+                                    # ???????MAYBE COULD BE BETER TO CHANGE naming below to something otehr than store_predict, and then change name in rest of function for plots.
+                                    store_predict <- data.frame(Array1.mean, store_predict_1[,(Numcols - 1):Numcols])
+                                    # class(store_predict)
+                                    # dim(store_predict)
+                                    # head(store_predict)
+                              } else{
+                                    # reset store_predict to zero
+                                    # assign call previously above removes store_predict from environment so need to reset store_predict
+                                    store_predict <- data.frame()
+                                    store_predict <- data.frame(matrix(nrow = length(percent)*(length(vars)*( length(vars) + 1) + 1) , ncol = 7))
+                                    colnames(store_predict) <- c("raw_estimate", "estimated_bias","bias_corrected_estimate","norm_lower", "norm_upper", "method","percent")
+                        }
+                  }
+
+      } else if(simulate == FALSE){
+
+              for(j in percent ){
+
+                    # if( "predict" %in% c("predict","observed")){
+
+                          # store_predict <- ps_paf_impactfraction(response_model= response_model, mediator_models = mediator_models, riskfactor = "phys",refval = 0,data = newd, prev = 0.0035/0.9965, ci=TRUE,boot_rep=100,ci_level=0.95,ci_type=c("norm"), PS_impactFraction = TRUE, percent = j, method = "predict", response_name ="case" )
+
+                          store_predict[  (1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i) , 1:5] <- average_pspaf_impactfraction(data=newd, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = 3,
+                                                                                                                                                                vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
+                                                                                                                                                                riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
+                                                                                                                                                                PS_impactFraction = TRUE, percent =j, method = "predict", response_name = "case")
+
+                          # t_vector should coincide with rownames
+                          store_predict[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),6] <- t_vector
+
+                          store_predict[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),7] <- j*100
+
+                    # }
+
+                    # if( "observed" %in% c("predict","observed")){
+                    #
+                    #       store_observed <- average_pspaf_impactfraction(data=newd, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = 3,
+                    #                         vars = c("phys","subhtn","apob_apoa","whr"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
+                    #                         riskfactor = "phys", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95,
+                    #                         PS_impactFraction = TRUE, percent =j, method = "observed", response_name = "case")
+                          #
+                          # # t_vector should coincide with rownames
+                          # store_observed[(1 + (length(vars)*( length(vars) + 1) + 1)*(row_i-1) ):((length(vars)*( length(vars) + 1) + 1)*row_i),6] <- t_vector
+                    #
+                    # }
+
+                    row_i <- row_i + 1
+
+              }
+
+      } else{
+              stop("Must assign simulate to value tof 'TRUE' or 'FALSE'.")
       }
 
       library(ggplot2)
@@ -379,5 +488,34 @@ plot_joint_PSPAF_impactfraction <- function(data=data, model_list = model_list, 
               stop("Must assign value to 'plot' for type of plot required.")
       }
 
+
+}
+
+
+
+# Only works if percent has been calculated for percent = 100% as one of the percent levels.
+check_randSample_Approximation <- function(store_predict,percent){
+
+      randSample_PercentApprox <- store_predict
+      # randSample_PercentApprox[,8] <- rep(store_predict[400:420,3], 20)
+      # randSample_PercentApprox[,8] <- rep(store_predict[400:420,3], length(percent) )
+      # Extract rows for bias_corrected_estimate calculated with percent == 100%
+      randSample_PercentApprox[,8] <- rep(store_predict[c(which(store_predict$percent == 100 ) ),3], length(percent) )
+
+      colnames(randSample_PercentApprox)[8] <- "bias_corrected_estimate_100percent"
+
+      library(dplyr)
+
+      randSample_PercentApprox <- mutate(randSample_PercentApprox,
+                                         approx_bias_corrected_estimate_randSample = bias_corrected_estimate_100percent*(percent/100))
+
+      randSample_PercentApprox <- mutate(randSample_PercentApprox,
+                                         check_bias_corrected_estimate_randSample = bias_corrected_estimate - approx_bias_corrected_estimate_randSample )
+
+      library(ggplot2)
+
+
+      # quartz()
+      ggplot(randSample_PercentApprox, aes(x = seq(from=1 , to=420 , by=1), y = check_bias_corrected_estimate_randSample)) + geom_point()
 
 }

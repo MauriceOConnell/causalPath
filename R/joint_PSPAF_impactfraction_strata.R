@@ -19,6 +19,9 @@
 #' @param percent A numerical percentage in decimal form e.g. percent = 0.33. The percent indicates the percentage of the total exposed individuals whose treatment or exposure variable is set to the reference value (i.e. refval). This is the percentage for the pathway-specific impact fraction.
 #' @param method A character with two options i.e. "observed" or "predict". "predict" applies the double expectation theorem in the derivation of the identification of the estimand i.e. it sums over all covariates and mediators. Whereas, "observed" uses the observed outcome and mediators for those individuals not forming part of the "percent" group rather than applying the double expectation theorem.
 #' @param response_name A character e.g. "case", which give the name of the response variable in the data.
+#' @param sampling A character taking one of two values i.e. c("random_sampling","dependent_sampling"). sampling = "random_sampling" samples individuals at random from the data. For example, if an intervention is to set exposed individuals (e.g. phsyically inactive individuals) to unexposed (e.g. physically active) for an exposure, then exposed individuals are selected at at random with the percentage of exposed individuals selected paramterised by 'percent'. Setting percent = 1, selects all exposed individuals and hence calculating a pathway-specific PAF, whereas setting percent to a decimal less than 1, creates a pathway-specific impact fraction. sampling = "dependent_sampling" is used if the selection of the individuals affected by intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5). If sampling = "dependent_sampling", then it is necessary to populate the additional two parameters, custom_sampling_variables and custom_sampling_conditions to identify the variables that selection dependes on (i.e. custom_sampling_variables ) and the conditions at which these variables are selected (i.e. custom_sampling_conditions ).
+#' @param custom_sampling_variables This variable is required if sampling = "dependent_sampling". A character vector containing the column names in the data for the variables if the selection of individuals affected by the intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5 and custom_sampling_variables = c("age", "high_blood_pressure") where `age" is the column name for age in the data and "high_blood_pressure" is the column name for high blood pressure in the data. Note if other column names in the data contain these names also, the column names should be changed to different text to ensure the function does not select the wrong column based on matching the text to the column names. The ordering of the column names in custom_sampling_variables must match the order of their conditions in the character vector "custom_sampling_conditions" as conditions in "custom_sampling_conditions" are matched to column names in the order they are entered.
+#' @param custom_sampling_conditions This variable is required if sampling = "dependent_sampling". A character vector containing the conditions for the variables column names in the data defined already in the character vector "custom_sampling_variables". If the selection of individuals affected by the intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5 and custom_sampling_variables = c("age", "high_blood_pressure") where `age" is the column name for age in the data and "high_blood_pressure" is the column name for high blood pressure in the data then custom_sampling_conditions = c(">= 55", "== 1") which would select individuals from column name 'age' to those aged over 55 and who also have high blood pressure if the column name 'high_blood_pressure' is coded equal to 1 for high blood pressure. Note if other column names in the data contain the names listed in"custom_sampling_variables" also, the column names should be changed to different text to ensure the function does not select the wrong column based on matching the text to the column names. The ordering of the column names in custom_sampling_variables must match the order of their conditions in the character vector "custom_sampling_conditions" as conditions in "custom_sampling_conditions" are matched to column names in the order they are entered.
 #' @return A dataframe with average joint and sequential PAF for all risk factors in node_vec and total PAF (or alternatively a subset of those risk factors if specified in vars).
 #' @export
 #'
@@ -54,8 +57,7 @@
 #' # average_pspaf_no_CI(data=stroke_reduced, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = NULL, alpha=0.05,
 #'                   # vars = c("exercise","high_blood_pressure","lipids","waist_hip_ratio"), exact = TRUE, response_model = response_model, mediator_models = mediator_models,
 #'                   # riskfactor = "exercise", refval=0, calculation_method = "D")
-average_pspaf_no_CI_impactfraction <- function(data, model_list, parent_list, node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = NULL, alpha=0.05, vars = NULL, exact = TRUE, response_model, mediator_models, riskfactor, refval, calculation_method = "D", PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
-                                               # , sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
+average_pspaf_no_CI_impactfraction <- function(data, model_list, parent_list, node_vec, prev = 0.0035/0.9965, nsim=NULL, correct_order = NULL, alpha=0.05, vars = NULL, exact = TRUE, response_model, mediator_models, riskfactor, refval, calculation_method = "D", PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case", sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
 
   response_col <- (1:length(colnames(data)))[colnames(data) %in% node_vec[length(node_vec)]]
   if(!c("weights") %in% colnames(data)) data$weights = rep(1, nrow(data))
@@ -174,95 +176,95 @@ pathspecific_col_list <- numeric(length(pathOrder))
   riskfactor_col <- (1:length(colnames(data)))[colnames(data) %in% riskfactor]
 
 ################################
-  if(PS_impactFraction){
+  # if(PS_impactFraction){
+  #
+  #               if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+  #                     stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+  #               }
+  #               new_PSIF_data <- data
+  #               Num_rows <- nrow(data)
+  #               which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+  #               exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+  #               Num_exposed <- length(exposed_patients)
+  #               newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+  #
+  #               remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+  #               naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+  #
+  #         }
+  if( sampling == "random_sampling" ){
 
-                if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-                      stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-                }
-                new_PSIF_data <- data
-                Num_rows <- nrow(data)
-                which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-                exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-                Num_exposed <- length(exposed_patients)
-                newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+      if(PS_impactFraction){
 
-                remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-                naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+                      if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                            stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                      }
+                      new_PSIF_data <- data
+                      Num_rows <- nrow(data)
+                      which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                      exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                      Num_exposed <- length(exposed_patients)
+                      newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
 
-          }
-#   if( sampling == "random_sampling" ){
-#
-#       if(PS_impactFraction){
-#
-#                       if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-#                             stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-#                       }
-#                       new_PSIF_data <- data
-#                       Num_rows <- nrow(data)
-#                       which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-#                       exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-#                       Num_exposed <- length(exposed_patients)
-#                       newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
-#
-#                       remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-#                       naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
-#
-#       }else{ stop("If an impact fraction is required with random sampling then PS_impactFraction must be set to TRUE.") }
-#
-# } else if(sampling == "dependent_sampling"){
-#
-#       if(PS_impactFraction){
-#
-#                       if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-#                             stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-#                       }
-#                       new_PSIF_data <- data
-#                       Num_rows <- nrow(data)
-#                       which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-#                       exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-#                       Num_exposed <- length(exposed_patients)
-#                       ########
-#                       # estimate out the more general PS-IF by simulating which individuals in your data are affected by the intervention (perhaps 50\% of older indivduals with high blood pressure), and then just disabling the mediating pathways for these individuals.
-#                       ########
-#                       which_col_custom <- data.frame()
-#                       which_col_custom <- data.frame(matrix(nrow = length(custom_sampling_variables) , ncol = 1))
-#                       for (i in 1:length(custom_sampling_variables) ){
-#
-#                             if(length(custom_sampling_variables) != length(custom_sampling_conditions) ){
-#                               stop("Variables custom_sampling_variables and custom_sampling_conditions must be defined and be the same length have have conidtions in the same order as the variables are defined.")
-#                             }
-#
-#                             which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(data))
-#                              # which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(newd))
-#
-#                       }
-#
-#                       text_dependent <- c("(1:Num_rows)[( data[,which_col]!=refval")
-#                       for( j in 1:dim(which_col_custom)[1] ){
-#
-#                               if(j == dim(which_col_custom)[1] ){
-#                                     text_dependent <- paste0(text_dependent, ' & ', ' data[,', which_col_custom[j,],' ] ', custom_sampling_conditions[j], ' ) ]', sep = ' ' )
-#                               }else{
-#                                     text_dependent <- paste0(text_dependent, ' & ', ' data[,',which_col_custom[j,],' ] ', custom_sampling_conditions[j], sep = ' ' )
-#                               }
-#
-#                       }
-#
-#                       # exposed_patients_dependent <- (1:Num_rows)[data[,which_col]!=refval]
-#                       # "(1:Num_rows)[( data[,which_col]!=refval &  data[,4 ] >= 55  &  data[,15 ] == 1 ) ] "
-#                       exposed_patients_dependent <- eval( parse( text = text_dependent  ) )
-#                       Num_exposed_dependent <- length(exposed_patients_dependent)
-#                       # newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
-#                       newly_unexposed_patients <- exposed_patients_dependent[sample(1:Num_exposed_dependent, percent*Num_exposed_dependent)]
-#                       ########
-#                       ########
-#                       remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-#                       naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
-#
-#       }else{ stop("If an impact fraction is required with dependent sampling then PS_impactFraction must be set to TRUE.") }
-# }else{
-#         stop("sampling variable must be defined for pathway-specific impact fraction to be either sampling as random_sampling or dependent_sampling.")
-# }
+                      remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                      naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+      }else{ stop("If an impact fraction is required with random sampling then PS_impactFraction must be set to TRUE.") }
+
+} else if(sampling == "dependent_sampling"){
+
+      if(PS_impactFraction){
+
+                      if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                            stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                      }
+                      new_PSIF_data <- data
+                      Num_rows <- nrow(data)
+                      which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                      exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                      Num_exposed <- length(exposed_patients)
+                      ########
+                      # estimate out the more general PS-IF by simulating which individuals in your data are affected by the intervention (perhaps 50\% of older indivduals with high blood pressure), and then just disabling the mediating pathways for these individuals.
+                      ########
+                      which_col_custom <- data.frame()
+                      which_col_custom <- data.frame(matrix(nrow = length(custom_sampling_variables) , ncol = 1))
+                      for (i in 1:length(custom_sampling_variables) ){
+
+                            if(length(custom_sampling_variables) != length(custom_sampling_conditions) ){
+                              stop("Variables custom_sampling_variables and custom_sampling_conditions must be defined and be the same length have have conidtions in the same order as the variables are defined.")
+                            }
+
+                            which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(data))
+                             # which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(newd))
+
+                      }
+
+                      text_dependent <- c("(1:Num_rows)[( data[,which_col]!=refval")
+                      for( j in 1:dim(which_col_custom)[1] ){
+
+                              if(j == dim(which_col_custom)[1] ){
+                                    text_dependent <- paste0(text_dependent, ' & ', ' data[,', which_col_custom[j,],' ] ', custom_sampling_conditions[j], ' ) ]', sep = ' ' )
+                              }else{
+                                    text_dependent <- paste0(text_dependent, ' & ', ' data[,',which_col_custom[j,],' ] ', custom_sampling_conditions[j], sep = ' ' )
+                              }
+
+                      }
+
+                      # exposed_patients_dependent <- (1:Num_rows)[data[,which_col]!=refval]
+                      # "(1:Num_rows)[( data[,which_col]!=refval &  data[,4 ] >= 55  &  data[,15 ] == 1 ) ] "
+                      exposed_patients_dependent <- eval( parse( text = text_dependent  ) )
+                      Num_exposed_dependent <- length(exposed_patients_dependent)
+                      # newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+                      newly_unexposed_patients <- exposed_patients_dependent[sample(1:Num_exposed_dependent, percent*Num_exposed_dependent)]
+                      ########
+                      ########
+                      remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                      naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+      }else{ stop("If an impact fraction is required with dependent sampling then PS_impactFraction must be set to TRUE.") }
+}else{
+        stop("sampling variable must be defined for pathway-specific impact fraction to be either sampling as random_sampling or dependent_sampling.")
+}
 ######################################################################################
   ######
   ## End of material to MOVE above for loop
@@ -759,6 +761,9 @@ if(!exact){
 #' @param percent A numerical percentage in decimal form e.g. percent = 0.33. The percent indicates the percentage of the total exposed individuals whose treatment or exposure variable is set to the reference value (i.e. refval). This is the percentage for the pathway-specific impact fraction.
 #' @param method A character with two options i.e. "observed" or "predict". "predict" applies the double expectation theorem in the derivation of the identification of the estimand i.e. it sums over all covariates and mediators. Whereas, "observed" uses the observed outcome and mediators for those individuals not forming part of the "percent" group rather than applying the double expectation theorem.
 #' @param response_name A character e.g. "case", which give the name of the response variable in the data.
+#' @param sampling A character taking one of two values i.e. c("random_sampling","dependent_sampling"). sampling = "random_sampling" samples individuals at random from the data. For example, if an intervention is to set exposed individuals (e.g. phsyically inactive individuals) to unexposed (e.g. physically active) for an exposure, then exposed individuals are selected at at random with the percentage of exposed individuals selected paramterised by 'percent'. Setting percent = 1, selects all exposed individuals and hence calculating a pathway-specific PAF, whereas setting percent to a decimal less than 1, creates a pathway-specific impact fraction. sampling = "dependent_sampling" is used if the selection of the individuals affected by intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5). If sampling = "dependent_sampling", then it is necessary to populate the additional two parameters, custom_sampling_variables and custom_sampling_conditions to identify the variables that selection dependes on (i.e. custom_sampling_variables ) and the conditions at which these variables are selected (i.e. custom_sampling_conditions ).
+#' @param custom_sampling_variables This variable is required if sampling = "dependent_sampling". A character vector containing the column names in the data for the variables if the selection of individuals affected by the intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5 and custom_sampling_variables = c("age", "high_blood_pressure") where `age" is the column name for age in the data and "high_blood_pressure" is the column name for high blood pressure in the data. Note if other column names in the data contain these names also, the column names should be changed to different text to ensure the function does not select the wrong column based on matching the text to the column names. The ordering of the column names in custom_sampling_variables must match the order of their conditions in the character vector "custom_sampling_conditions" as conditions in "custom_sampling_conditions" are matched to column names in the order they are entered.
+#' @param custom_sampling_conditions This variable is required if sampling = "dependent_sampling". A character vector containing the conditions for the variables column names in the data defined already in the character vector "custom_sampling_variables". If the selection of individuals affected by the intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5 and custom_sampling_variables = c("age", "high_blood_pressure") where `age" is the column name for age in the data and "high_blood_pressure" is the column name for high blood pressure in the data then custom_sampling_conditions = c(">= 55", "== 1") which would select individuals from column name 'age' to those aged over 55 and who also have high blood pressure if the column name 'high_blood_pressure' is coded equal to 1 for high blood pressure. Note if other column names in the data contain the names listed in"custom_sampling_variables" also, the column names should be changed to different text to ensure the function does not select the wrong column based on matching the text to the column names. The ordering of the column names in custom_sampling_variables must match the order of their conditions in the character vector "custom_sampling_conditions" as conditions in "custom_sampling_conditions" are matched to column names in the order they are entered.
 #' @return A dataframe with average joint and sequential PAF for all risk factors in node_vec (or alternatively a subset of those risk factors if specified in vars).
 #' @export
 #'
@@ -800,8 +805,7 @@ if(!exact){
 #'                  riskfactor = "exercise", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95)
 #'
 #' # joint_pspaf(data=stroke_reduced, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, vars = c("exercise","high_blood_pressure","lipids","waist_hip_ratio"),response_model = response_model, mediator_models = mediator_models, riskfactor = "exercise", refval=0, calculation_method = "D", ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95)
-average_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec, prev=.09, exact=TRUE, nsim=NULL, correct_order=2, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
-                                         # , sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
+average_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec, prev=.09, exact=TRUE, nsim=NULL, correct_order=2, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case", sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
     if(!node_order(parent_list=parent_list,node_vec=node_vec )){
     stop("ancestors must be specified before descendants in node_vec")
   }
@@ -816,12 +820,10 @@ average_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec
 
   }
 
-  if(!ci) return(average_pspaf_no_CI_impactfraction(data=data, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, alpha=1-ci_level_ME,vars=vars,exact=exact, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method = calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name  ))
-                                                    # , sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions  ))
+  if(!ci) return(average_pspaf_no_CI_impactfraction(data=data, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, alpha=1-ci_level_ME,vars=vars,exact=exact, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method = calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name, sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions  ))
   ## MOC: NEED TO UPDATE Parameters
   # CHECK IF NEED MORE PARAMETERS
-  res <- boot::boot(data=data,statistic=average_pspaf_inner_impactfraction,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, vars=vars, exact=exact, response_model = response_model, mediator_models = mediator_models, riskfactor = riskfactor, refval=refval, calculation_method = calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name )
-                    # , sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions )
+  res <- boot::boot(data=data,statistic=average_pspaf_inner_impactfraction,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, nsim=nsim, correct_order=correct_order, vars=vars, exact=exact, response_model = response_model, mediator_models = mediator_models, riskfactor = riskfactor, refval=refval, calculation_method = calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name, sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions )
   if(is.null(vars)) vars <- node_vec[1:(length(node_vec)-1)]
 
       return(extract_ci(res=res,model_type='glm',t_vector=c(paste0(rep(node_vec[node_vec %in% vars],times=rep(length(vars),length(vars))),'_',rep(1:length(vars),length(vars))),paste0("Average PAF ", node_vec[node_vec %in% vars]),'TotalPAF'),ci_level=ci_level,ci_type=ci_type,continuous=TRUE))
@@ -830,8 +832,8 @@ average_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec
 
 # CHECK PARAMETERS ADDED IN
 average_pspaf_inner_impactfraction <- function(data, ind, model_list, parent_list, node_vec, prev=.09, nsim=100, correct_order=3, vars=NULL, exact=TRUE, response_model = response_model, mediator_models = mediator_models,
-                  riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
-                  #, sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
+                  riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case",
+                  sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
 
 
   library(splines)
@@ -1667,95 +1669,95 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
 ######################################################################################
 ###################
 # # Move outside for(i in 1:nsim)
-if(PS_impactFraction){
+# if(PS_impactFraction){
+#
+#                 if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+#                       stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+#                 }
+#                 new_PSIF_data <- data
+#                 Num_rows <- nrow(data)
+#                 which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+#                 exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+#                 Num_exposed <- length(exposed_patients)
+#                 newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+#
+#                 remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+#                 naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+#
+#           }
+  if( sampling == "random_sampling" ){
 
-                if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-                      stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-                }
-                new_PSIF_data <- data
-                Num_rows <- nrow(data)
-                which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-                exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-                Num_exposed <- length(exposed_patients)
-                newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+      if(PS_impactFraction){
 
-                remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-                naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+                      if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                            stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                      }
+                      new_PSIF_data <- data
+                      Num_rows <- nrow(data)
+                      which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                      exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                      Num_exposed <- length(exposed_patients)
+                      newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
 
-          }
-#   if( sampling == "random_sampling" ){
-#
-#       if(PS_impactFraction){
-#
-#                       if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-#                             stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-#                       }
-#                       new_PSIF_data <- data
-#                       Num_rows <- nrow(data)
-#                       which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-#                       exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-#                       Num_exposed <- length(exposed_patients)
-#                       newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
-#
-#                       remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-#                       naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
-#
-#       }else{ stop("If an impact fraction is required with random sampling then PS_impactFraction must be set to TRUE.") }
-#
-# } else if(sampling == "dependent_sampling"){
-#
-#       if(PS_impactFraction){
-#
-#                       if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-#                             stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-#                       }
-#                       new_PSIF_data <- data
-#                       Num_rows <- nrow(data)
-#                       which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-#                       exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-#                       Num_exposed <- length(exposed_patients)
-#                       ########
-#                       # estimate out the more general PS-IF by simulating which individuals in your data are affected by the intervention (perhaps 50\% of older indivduals with high blood pressure), and then just disabling the mediating pathways for these individuals.
-#                       ########
-#                       which_col_custom <- data.frame()
-#                       which_col_custom <- data.frame(matrix(nrow = length(custom_sampling_variables) , ncol = 1))
-#                       for (i in 1:length(custom_sampling_variables) ){
-#
-#                             if(length(custom_sampling_variables) != length(custom_sampling_conditions) ){
-#                               stop("Variables custom_sampling_variables and custom_sampling_conditions must be defined and be the same length have have conidtions in the same order as the variables are defined.")
-#                             }
-#
-#                             which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(data))
-#                              # which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(newd))
-#
-#                       }
-#
-#                       text_dependent <- c("(1:Num_rows)[( data[,which_col]!=refval")
-#                       for( j in 1:dim(which_col_custom)[1] ){
-#
-#                               if(j == dim(which_col_custom)[1] ){
-#                                     text_dependent <- paste0(text_dependent, ' & ', ' data[,', which_col_custom[j,],' ] ', custom_sampling_conditions[j], ' ) ]', sep = ' ' )
-#                               }else{
-#                                     text_dependent <- paste0(text_dependent, ' & ', ' data[,',which_col_custom[j,],' ] ', custom_sampling_conditions[j], sep = ' ' )
-#                               }
-#
-#                       }
-#
-#                       # exposed_patients_dependent <- (1:Num_rows)[data[,which_col]!=refval]
-#                       # "(1:Num_rows)[( data[,which_col]!=refval &  data[,4 ] >= 55  &  data[,15 ] == 1 ) ] "
-#                       exposed_patients_dependent <- eval( parse( text = text_dependent  ) )
-#                       Num_exposed_dependent <- length(exposed_patients_dependent)
-#                       # newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
-#                       newly_unexposed_patients <- exposed_patients_dependent[sample(1:Num_exposed_dependent, percent*Num_exposed_dependent)]
-#                       ########
-#                       ########
-#                       remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-#                       naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
-#
-#       }else{ stop("If an impact fraction is required with dependent sampling then PS_impactFraction must be set to TRUE.") }
-# }else{
-#         stop("sampling variable must be defined for pathway-specific impact fraction to be either sampling as random_sampling or dependent_sampling.")
-# }
+                      remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                      naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+      }else{ stop("If an impact fraction is required with random sampling then PS_impactFraction must be set to TRUE.") }
+
+} else if(sampling == "dependent_sampling"){
+
+      if(PS_impactFraction){
+
+                      if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                            stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                      }
+                      new_PSIF_data <- data
+                      Num_rows <- nrow(data)
+                      which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                      exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                      Num_exposed <- length(exposed_patients)
+                      ########
+                      # estimate out the more general PS-IF by simulating which individuals in your data are affected by the intervention (perhaps 50\% of older indivduals with high blood pressure), and then just disabling the mediating pathways for these individuals.
+                      ########
+                      which_col_custom <- data.frame()
+                      which_col_custom <- data.frame(matrix(nrow = length(custom_sampling_variables) , ncol = 1))
+                      for (i in 1:length(custom_sampling_variables) ){
+
+                            if(length(custom_sampling_variables) != length(custom_sampling_conditions) ){
+                              stop("Variables custom_sampling_variables and custom_sampling_conditions must be defined and be the same length have have conidtions in the same order as the variables are defined.")
+                            }
+
+                            which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(data))
+                             # which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(newd))
+
+                      }
+
+                      text_dependent <- c("(1:Num_rows)[( data[,which_col]!=refval")
+                      for( j in 1:dim(which_col_custom)[1] ){
+
+                              if(j == dim(which_col_custom)[1] ){
+                                    text_dependent <- paste0(text_dependent, ' & ', ' data[,', which_col_custom[j,],' ] ', custom_sampling_conditions[j], ' ) ]', sep = ' ' )
+                              }else{
+                                    text_dependent <- paste0(text_dependent, ' & ', ' data[,',which_col_custom[j,],' ] ', custom_sampling_conditions[j], sep = ' ' )
+                              }
+
+                      }
+
+                      # exposed_patients_dependent <- (1:Num_rows)[data[,which_col]!=refval]
+                      # "(1:Num_rows)[( data[,which_col]!=refval &  data[,4 ] >= 55  &  data[,15 ] == 1 ) ] "
+                      exposed_patients_dependent <- eval( parse( text = text_dependent  ) )
+                      Num_exposed_dependent <- length(exposed_patients_dependent)
+                      # newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+                      newly_unexposed_patients <- exposed_patients_dependent[sample(1:Num_exposed_dependent, percent*Num_exposed_dependent)]
+                      ########
+                      ########
+                      remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                      naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+      }else{ stop("If an impact fraction is required with dependent sampling then PS_impactFraction must be set to TRUE.") }
+}else{
+        stop("sampling variable must be defined for pathway-specific impact fraction to be either sampling as random_sampling or dependent_sampling.")
+}
 ###################
 
    for(i in 1:nsim){
@@ -2495,6 +2497,9 @@ predict_df_discrete <- function(riskfactor, refval, data){
 #' @param percent A numerical percentage in decimal form e.g. percent = 0.33. The percent indicates the percentage of the total exposed individuals whose treatment or exposure variable is set to the reference value (i.e. refval). This is the percentage for the pathway-specific impact fraction.
 #' @param method A character with two options i.e. "observed" or "predict". "predict" applies the double expectation theorem in the derivation of the identification of the estimand i.e. it sums over all covariates and mediators. Whereas, "observed" uses the observed outcome and mediators for those individuals not forming part of the "percent" group rather than applying the double expectation theorem.
 #' @param response_name A character e.g. "case", which give the name of the response variable in the data.
+#' @param sampling A character taking one of two values i.e. c("random_sampling","dependent_sampling"). sampling = "random_sampling" samples individuals at random from the data. For example, if an intervention is to set exposed individuals (e.g. phsyically inactive individuals) to unexposed (e.g. physically active) for an exposure, then exposed individuals are selected at at random with the percentage of exposed individuals selected paramterised by 'percent'. Setting percent = 1, selects all exposed individuals and hence calculating a pathway-specific PAF, whereas setting percent to a decimal less than 1, creates a pathway-specific impact fraction. sampling = "dependent_sampling" is used if the selection of the individuals affected by intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5). If sampling = "dependent_sampling", then it is necessary to populate the additional two parameters, custom_sampling_variables and custom_sampling_conditions to identify the variables that selection dependes on (i.e. custom_sampling_variables ) and the conditions at which these variables are selected (i.e. custom_sampling_conditions ).
+#' @param custom_sampling_variables This variable is required if sampling = "dependent_sampling". A character vector containing the column names in the data for the variables if the selection of individuals affected by the intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5 and custom_sampling_variables = c("age", "high_blood_pressure") where `age" is the column name for age in the data and "high_blood_pressure" is the column name for high blood pressure in the data. Note if other column names in the data contain these names also, the column names should be changed to different text to ensure the function does not select the wrong column based on matching the text to the column names. The ordering of the column names in custom_sampling_variables must match the order of their conditions in the character vector "custom_sampling_conditions" as conditions in "custom_sampling_conditions" are matched to column names in the order they are entered.
+#' @param custom_sampling_conditions This variable is required if sampling = "dependent_sampling". A character vector containing the conditions for the variables column names in the data defined already in the character vector "custom_sampling_variables". If the selection of individuals affected by the intervention depended on confounders (e.g.  50\% of older indivduals with high blood pressure, where percent would be set to percent = 0.5 and custom_sampling_variables = c("age", "high_blood_pressure") where `age" is the column name for age in the data and "high_blood_pressure" is the column name for high blood pressure in the data then custom_sampling_conditions = c(">= 55", "== 1") which would select individuals from column name 'age' to those aged over 55 and who also have high blood pressure if the column name 'high_blood_pressure' is coded equal to 1 for high blood pressure. Note if other column names in the data contain the names listed in"custom_sampling_variables" also, the column names should be changed to different text to ensure the function does not select the wrong column based on matching the text to the column names. The ordering of the column names in custom_sampling_variables must match the order of their conditions in the character vector "custom_sampling_conditions" as conditions in "custom_sampling_conditions" are matched to column names in the order they are entered.
 #' @export
 #'
 #' @examples
@@ -2535,25 +2540,21 @@ predict_df_discrete <- function(riskfactor, refval, data){
 #'                  # riskfactor = "exercise", refval=0, calculation_method = "D", ci=TRUE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, ci_level_ME=0.95)
 #'
 #' joint_pspaf(data=stroke_reduced, model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev = 0.0035/0.9965, vars = c("exercise","high_blood_pressure","lipids","waist_hip_ratio"),response_model = response_model, mediator_models = mediator_models, riskfactor = "exercise", refval=0, calculation_method = "D", ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95)
-joint_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec, prev=.09, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
-                                       # , sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
+joint_pspaf_impactfraction <- function(data, model_list, parent_list, node_vec, prev=.09, vars=NULL,response_model, mediator_models, riskfactor, refval, calculation_method, ci=FALSE,boot_rep=100, ci_type=c("norm"),ci_level=0.95, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case", sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
   if(!node_order(parent_list=parent_list,node_vec=node_vec)){
     stop("ancestors must be specified before descendants in node_vec")
   }
   if(!is.null(vars) & !all(vars %in% node_vec)){
     stop("Not all requested variables are in node_vec.  Check spelling")
   }
-if(!ci) return(joint_pspaf_inner_impactfraction(data=data,ind=1:nrow(data), model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev,vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method,PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name ))
-                                                #, sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions ))
-  res <- boot::boot(data=data,statistic=joint_pspaf_inner_impactfraction,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name )
-                    # , sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions)
+if(!ci) return(joint_pspaf_inner_impactfraction(data=data,ind=1:nrow(data), model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev,vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method,PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name, sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions ))
+  res <- boot::boot(data=data,statistic=joint_pspaf_inner_impactfraction,R=boot_rep,model_list=model_list, parent_list=parent_list, node_vec=node_vec, prev=prev, vars=vars, response_model=response_model, mediator_models=mediator_models, riskfactor=riskfactor, refval=refval, calculation_method=calculation_method, PS_impactFraction = PS_impactFraction, percent = percent, method = method, response_name = response_name, sampling = sampling, custom_sampling_variables = custom_sampling_variables, custom_sampling_conditions = custom_sampling_conditions)
   return(boot::boot.ci(res,type=ci_type))
 
 }
 
 
-joint_pspaf_inner_impactfraction <- function(data, ind, model_list, parent_list, node_vec, prev=.09,vars=NULL, response_model, mediator_models, riskfactor, refval, calculation_method, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case" ){
-                                             # , sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
+joint_pspaf_inner_impactfraction <- function(data, ind, model_list, parent_list, node_vec, prev=.09,vars=NULL, response_model, mediator_models, riskfactor, refval, calculation_method, PS_impactFraction = FALSE, percent = 1, method = "predict", response_name = "case", sampling = "random_sampling", custom_sampling_variables = NULL, custom_sampling_conditions = NULL ){
 
   library(splines)
   ################################
@@ -3316,95 +3317,95 @@ for(i in 1:(N+1)) pathspecific_col_list[i] <- (1:ncol(data))[colnames(data)==pat
   riskfactor_col <- (1:length(colnames(data)))[colnames(data) %in% riskfactor]
 
 ########################################
-  if(PS_impactFraction){
+  # if(PS_impactFraction){
+  #
+  #               if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+  #                     stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+  #               }
+  #               new_PSIF_data <- data
+  #               Num_rows <- nrow(data)
+  #               which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+  #               exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+  #               Num_exposed <- length(exposed_patients)
+  #               newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+  #
+  #               remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+  #               naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+  #
+  #         }
+  if( sampling == "random_sampling" ){
 
-                if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-                      stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-                }
-                new_PSIF_data <- data
-                Num_rows <- nrow(data)
-                which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-                exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-                Num_exposed <- length(exposed_patients)
-                newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+      if(PS_impactFraction){
 
-                remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-                naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+                      if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                            stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                      }
+                      new_PSIF_data <- data
+                      Num_rows <- nrow(data)
+                      which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                      exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                      Num_exposed <- length(exposed_patients)
+                      newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
 
-          }
-#   if( sampling == "random_sampling" ){
-#
-#       if(PS_impactFraction){
-#
-#                       if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-#                             stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-#                       }
-#                       new_PSIF_data <- data
-#                       Num_rows <- nrow(data)
-#                       which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-#                       exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-#                       Num_exposed <- length(exposed_patients)
-#                       newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
-#
-#                       remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-#                       naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
-#
-#       }else{ stop("If an impact fraction is required with random sampling then PS_impactFraction must be set to TRUE.") }
-#
-# } else if(sampling == "dependent_sampling"){
-#
-#       if(PS_impactFraction){
-#
-#                       if( is.null(percent) || !(percent <= 1 & percent > 0) ){
-#                             stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
-#                       }
-#                       new_PSIF_data <- data
-#                       Num_rows <- nrow(data)
-#                       which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
-#                       exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
-#                       Num_exposed <- length(exposed_patients)
-#                       ########
-#                       # estimate out the more general PS-IF by simulating which individuals in your data are affected by the intervention (perhaps 50\% of older indivduals with high blood pressure), and then just disabling the mediating pathways for these individuals.
-#                       ########
-#                       which_col_custom <- data.frame()
-#                       which_col_custom <- data.frame(matrix(nrow = length(custom_sampling_variables) , ncol = 1))
-#                       for (i in 1:length(custom_sampling_variables) ){
-#
-#                             if(length(custom_sampling_variables) != length(custom_sampling_conditions) ){
-#                               stop("Variables custom_sampling_variables and custom_sampling_conditions must be defined and be the same length have have conidtions in the same order as the variables are defined.")
-#                             }
-#
-#                             which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(data))
-#                              # which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(newd))
-#
-#                       }
-#
-#                       text_dependent <- c("(1:Num_rows)[( data[,which_col]!=refval")
-#                       for( j in 1:dim(which_col_custom)[1] ){
-#
-#                               if(j == dim(which_col_custom)[1] ){
-#                                     text_dependent <- paste0(text_dependent, ' & ', ' data[,', which_col_custom[j,],' ] ', custom_sampling_conditions[j], ' ) ]', sep = ' ' )
-#                               }else{
-#                                     text_dependent <- paste0(text_dependent, ' & ', ' data[,',which_col_custom[j,],' ] ', custom_sampling_conditions[j], sep = ' ' )
-#                               }
-#
-#                       }
-#
-#                       # exposed_patients_dependent <- (1:Num_rows)[data[,which_col]!=refval]
-#                       # "(1:Num_rows)[( data[,which_col]!=refval &  data[,4 ] >= 55  &  data[,15 ] == 1 ) ] "
-#                       exposed_patients_dependent <- eval( parse( text = text_dependent  ) )
-#                       Num_exposed_dependent <- length(exposed_patients_dependent)
-#                       # newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
-#                       newly_unexposed_patients <- exposed_patients_dependent[sample(1:Num_exposed_dependent, percent*Num_exposed_dependent)]
-#                       ########
-#                       ########
-#                       remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
-#                       naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
-#
-#       }else{ stop("If an impact fraction is required with dependent sampling then PS_impactFraction must be set to TRUE.") }
-# }else{
-#         stop("sampling variable must be defined for pathway-specific impact fraction to be either sampling as random_sampling or dependent_sampling.")
-# }
+                      remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                      naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+      }else{ stop("If an impact fraction is required with random sampling then PS_impactFraction must be set to TRUE.") }
+
+} else if(sampling == "dependent_sampling"){
+
+      if(PS_impactFraction){
+
+                      if( is.null(percent) || !(percent <= 1 & percent > 0) ){
+                            stop("Percent for pathway-specific impact fraction must be provided as an argument for a pathway-specific impact fraction calculation. Percent must be between 0 and 1.")
+                      }
+                      new_PSIF_data <- data
+                      Num_rows <- nrow(data)
+                      which_col <- grep(paste0("^",riskfactor,"$"),colnames(data))
+                      exposed_patients <- (1:Num_rows)[data[,which_col]!=refval]
+                      Num_exposed <- length(exposed_patients)
+                      ########
+                      # estimate out the more general PS-IF by simulating which individuals in your data are affected by the intervention (perhaps 50\% of older indivduals with high blood pressure), and then just disabling the mediating pathways for these individuals.
+                      ########
+                      which_col_custom <- data.frame()
+                      which_col_custom <- data.frame(matrix(nrow = length(custom_sampling_variables) , ncol = 1))
+                      for (i in 1:length(custom_sampling_variables) ){
+
+                            if(length(custom_sampling_variables) != length(custom_sampling_conditions) ){
+                              stop("Variables custom_sampling_variables and custom_sampling_conditions must be defined and be the same length have have conidtions in the same order as the variables are defined.")
+                            }
+
+                            which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(data))
+                             # which_col_custom[i,] <- grep(paste0("^",custom_sampling_variables[i],"$"),colnames(newd))
+
+                      }
+
+                      text_dependent <- c("(1:Num_rows)[( data[,which_col]!=refval")
+                      for( j in 1:dim(which_col_custom)[1] ){
+
+                              if(j == dim(which_col_custom)[1] ){
+                                    text_dependent <- paste0(text_dependent, ' & ', ' data[,', which_col_custom[j,],' ] ', custom_sampling_conditions[j], ' ) ]', sep = ' ' )
+                              }else{
+                                    text_dependent <- paste0(text_dependent, ' & ', ' data[,',which_col_custom[j,],' ] ', custom_sampling_conditions[j], sep = ' ' )
+                              }
+
+                      }
+
+                      # exposed_patients_dependent <- (1:Num_rows)[data[,which_col]!=refval]
+                      # "(1:Num_rows)[( data[,which_col]!=refval &  data[,4 ] >= 55  &  data[,15 ] == 1 ) ] "
+                      exposed_patients_dependent <- eval( parse( text = text_dependent  ) )
+                      Num_exposed_dependent <- length(exposed_patients_dependent)
+                      # newly_unexposed_patients <- exposed_patients[sample(1:Num_exposed, percent*Num_exposed)]
+                      newly_unexposed_patients <- exposed_patients_dependent[sample(1:Num_exposed_dependent, percent*Num_exposed_dependent)]
+                      ########
+                      ########
+                      remain_exposed_patients <- exposed_patients[!(exposed_patients %in% newly_unexposed_patients)]
+                      naturally_unexposed_patients <- (1:Num_rows)[data[,which_col]==refval]
+
+      }else{ stop("If an impact fraction is required with dependent sampling then PS_impactFraction must be set to TRUE.") }
+}else{
+        stop("sampling variable must be defined for pathway-specific impact fraction to be either sampling as random_sampling or dependent_sampling.")
+}
 ########################################
 
   ######
